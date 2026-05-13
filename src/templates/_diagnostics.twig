@@ -1,0 +1,203 @@
+{#
+  Yesterday's News — CP diagnostics utility
+  Renders a table of the yesterdays_news_visits DB rows and a table of
+  cached include candidates, annotated with prune status.
+#}
+
+<div class="yn-diagnostics">
+
+  {# ── Action buttons ────────────────────────────────────────────── #}
+  <div class="yn-actions" style="display:flex;gap:0.75rem;margin-bottom:1.5rem;align-items:center;">
+
+    <form method="post">
+      {{ csrfInput() }}
+      {{ actionInput('yesterdays-news/cp/flush') }}
+      {{ redirectInput(craft.app.request.url) }}
+      <button type="submit" class="btn">
+        Flush buffer to DB{% if pendingCount > 0 %} <span class="badge">{{ pendingCount }}</span>{% endif %}
+      </button>
+    </form>
+
+    <form method="post">
+      {{ csrfInput() }}
+      {{ actionInput('yesterdays-news/cp/prune') }}
+      {{ redirectInput(craft.app.request.url) }}
+      {% set pruneDisabled = staleCount == 0 and includeReadyCount == 0 %}
+      <button type="submit" class="btn submit"{% if pruneDisabled %} disabled{% endif %}>
+        Prune
+        {% if staleCount > 0 %}{{ staleCount }} stale URL{{ staleCount != 1 ? 's' }}{% endif %}
+        {% if staleCount > 0 and includeReadyCount > 0 %} + {% endif %}
+        {% if includeReadyCount > 0 %}{{ includeReadyCount }} stale include{{ includeReadyCount != 1 ? 's' }}{% endif %}
+        {% if staleCount == 0 and includeReadyCount == 0 %}0 stale{% endif %}
+      </button>
+    </form>
+
+    <form method="post">
+      {{ csrfInput() }}
+      {{ actionInput('yesterdays-news/cp/sync') }}
+      {{ redirectInput(craft.app.request.url) }}
+      <button type="submit" class="btn">Sync from Blitz</button>
+    </form>
+
+    <form method="post" style="margin-left:auto">
+      {{ csrfInput() }}
+      {{ actionInput('yesterdays-news/cp/clear') }}
+      {{ redirectInput(craft.app.request.url) }}
+      <button type="submit" class="btn"
+        style="color:var(--error-color,#CF1124)"
+        onclick="return confirm('Clear all Yesterday\'s News visit data? This cannot be undone.')">
+        Clear all data
+      </button>
+    </form>
+
+  </div>
+
+  {# ── Page visits summary ────────────────────────────────────────── #}
+  <div class="yn-meta" style="display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1.5rem;padding:1rem 1.25rem;background:var(--gray-050,#f3f3f3);border-radius:var(--medium-border-radius,5px);font-size:0.875rem;">
+    <span><strong>Page threshold:</strong> {{ thresholdHuman }}</span>
+    {% if cutoffLocal %}
+      <span>
+        <strong>Cutoff:</strong>
+        {{ cutoffLocal }} {{ cutoffTzAbbr }}{% if appTimezone != 'UTC' %} <small style="color:var(--medium-text-color)">[{{ cutoffUtc }} UTC]</small>{% endif %}
+      </span>
+    {% endif %}
+    <span><strong>Tracked:</strong> {{ totalCount }}</span>
+    <span style="color:var(--error-color,#CF1124)"><strong>Stale:</strong> {{ staleCount }}</span>
+    <span style="color:var(--success-color,#23922a)"><strong>Fresh:</strong> {{ freshCount }}</span>
+    {% if pendingCount > 0 %}
+      <span style="color:var(--warning-color,#b95000)"><strong>Buffered:</strong> {{ pendingCount }}</span>
+    {% endif %}
+  </div>
+
+  {# ── Page visits table ─────────────────────────────────────────── #}
+  {% if rows is empty %}
+    <p class="zilch">No visits recorded yet.</p>
+  {% else %}
+    <div class="tableview">
+      <table class="data fullwidth yn-table">
+        <thead>
+          <tr>
+            <th class="thin" style="width:2rem;text-align:center"><!--status--></th>
+            <th>URL</th>
+            <th style="white-space:nowrap">Last visited <small>UTC</small></th>
+            <th style="white-space:nowrap">Age</th>
+            <th style="white-space:nowrap">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+            <tr class="{{ row.isStale ? 'yn-stale' : 'yn-fresh' }}">
+              <td style="text-align:center">
+                {% if row.isStale %}
+                  <span class="status off" title="Scheduled for pruning"></span>
+                {% else %}
+                  <span class="status on" title="Staying in cache"></span>
+                {% endif %}
+              </td>
+              <td><code style="font-size:0.8125rem">{{ row.url }}</code></td>
+              <td style="white-space:nowrap;font-size:0.8125rem;color:var(--medium-text-color)">{{ row.lastVisitedAt|slice(0, 16) }}</td>
+              <td style="white-space:nowrap;font-size:0.8125rem">{{ row.ageHuman }}</td>
+              <td style="white-space:nowrap;font-size:0.8125rem">
+                {% if row.isStale %}
+                  <span style="color:var(--error-color,#CF1124)">Prune on next run</span>
+                {% else %}
+                  <span style="color:var(--medium-text-color)">Keep for {{ row.pruneInHuman }}</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {# ── Cached includes ───────────────────────────────────────────── #}
+  {% if includeTotalCount is defined %}
+    <h3 style="margin-top:2.5rem;margin-bottom:0.5rem">
+      Cached Includes
+      <span style="font-weight:normal;font-size:0.875rem;color:var(--medium-text-color)">
+        — {{ includeTotalCount }} tracked,
+        <span style="color:var(--error-color,#CF1124)">{{ includeReadyCount }} ready to prune</span>
+      </span>
+    </h3>
+
+    <p style="margin-bottom:1rem;font-size:0.8125rem;color:var(--medium-text-color)">
+      Pruned when entry age &gt; {{ (entryAgeThreshold / 86400)|round(0) }}d
+      <em>and</em> cache age &gt; {{ (includeThreshold / 3600)|round(0) }}h.
+      New/recently-updated entries are never pruned regardless of cache age.
+    </p>
+
+    {% if includeRows is empty %}
+      <p class="zilch">No cached includes found for the configured templates.</p>
+    {% else %}
+      <div class="tableview">
+        <table class="data fullwidth yn-table">
+          <thead>
+            <tr>
+              <th class="thin" style="width:2rem;text-align:center"><!--status--></th>
+              <th>Template</th>
+              <th style="white-space:nowrap">Entry ID</th>
+              <th style="white-space:nowrap">Entry age</th>
+              <th style="white-space:nowrap">Cache age</th>
+              <th style="white-space:nowrap">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in includeRows %}
+              <tr>
+                <td style="text-align:center">
+                  {% if row.isReadyToPrune %}
+                    <span class="status off" title="Ready to prune"></span>
+                  {% elseif row.dateCached is null %}
+                    <span class="status" style="background:var(--gray-300,#ccc)" title="Not in blitz_caches"></span>
+                  {% else %}
+                    <span class="status on" title="Waiting"></span>
+                  {% endif %}
+                </td>
+
+                <td style="font-size:0.8125rem">
+                  <code>{{ row.template }}</code>
+                </td>
+
+                <td style="white-space:nowrap;font-size:0.8125rem">
+                  {{ row.entryId }}
+                </td>
+
+                <td style="white-space:nowrap;font-size:0.8125rem">
+                  {% if row.entryAgeHuman %}
+                    <span{% if not row.isEntryOld %} style="color:var(--success-color,#23922a)" title="Entry updated recently — protected"{% endif %}>
+                      {{ row.entryAgeHuman }}
+                    </span>
+                  {% else %}
+                    <span style="color:var(--medium-text-color)">unknown</span>
+                  {% endif %}
+                </td>
+
+                <td style="white-space:nowrap;font-size:0.8125rem">
+                  {% if row.cacheAgeHuman %}
+                    {{ row.cacheAgeHuman }}
+                  {% else %}
+                    <span style="color:var(--medium-text-color)">not cached</span>
+                  {% endif %}
+                </td>
+
+                <td style="white-space:nowrap;font-size:0.8125rem">
+                  {% if row.isReadyToPrune %}
+                    <span style="color:var(--error-color,#CF1124)">Prune on next run</span>
+                  {% elseif row.dateCached is null %}
+                    <span style="color:var(--medium-text-color)">Not cached</span>
+                  {% elseif not row.isEntryOld %}
+                    <span style="color:var(--success-color,#23922a)">Entry too new</span>
+                  {% elseif not row.isCacheOld %}
+                    <span style="color:var(--medium-text-color)">Cache too fresh</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  {% endif %}
+
+</div>

@@ -1,0 +1,34 @@
+{#
+  Yesterday's News — JS beacon
+  Injected via View::EVENT_END_BODY into all frontend page renders.
+  This script tag is baked into the static HTML that Blitz caches, so it is
+  present in every cached page response served to subsequent visitors.
+
+  The track endpoint has CSRF validation disabled (it is a read-only analytics
+  call), so no token handling is needed.
+
+  The actionTrigger value is rendered once during the initial PHP page render
+  and baked as a literal string into the cached static HTML.
+#}
+<script>
+(function () {
+  'use strict';
+
+  var actionTrigger = '{{ craft.app.config.general.actionTrigger | e('js') }}';
+
+  function sendBeacon() {
+    try {
+      fetch('/' + actionTrigger + '/yesterdays-news/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: window.location.pathname }),
+        keepalive: true
+      });
+    } catch (e) {
+      // Silently ignore — tracking is best-effort and must never break the page.
+    }
+  }
+
+  sendBeacon();
+})();
+</script>
