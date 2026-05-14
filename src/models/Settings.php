@@ -14,12 +14,7 @@ use craft\base\Model;
  *         'threshold'        => 86400,
  *         'entryAgeThreshold' => 2592000,
  *         'includeThreshold' => 86400,
- *         'includeTemplates' => [
- *             '_includes/_article-card'          => 'entryId',
- *             'sections/_featured'               => 'featuredId',
- *             'sections/_partials/featured-live' => 'featuredId',
- *         ],
- *     ],
+ *         'includeTemplates' => [],
  * ];
  */
 class Settings extends Model
@@ -51,11 +46,7 @@ class Settings extends Model
      *
      * @var array<string, string>
      */
-    public array $includeTemplates = [
-        '_includes/_article-card'          => 'entryId',
-        'sections/_featured'               => 'featuredId',
-        'sections/_partials/featured-live' => 'featuredId',
-    ];
+    public array $includeTemplates = [];
 
     public function defineRules(): array
     {
