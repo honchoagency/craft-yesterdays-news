@@ -28,7 +28,7 @@ The plugin works automatically from there. Pages visited by real users are track
 ### 1. Install Yesterday's News
 You can install Yesterday's News by searching for “Yesterday's News” in the Craft Plugin Store, or install manually using composer.
 ```sh
-composer require tallowandsons/craft-critter
+composer require honchoagency/craft-yesterdays-news
 ```
 
 ### 2. Configure the plugin
