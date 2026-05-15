@@ -7,7 +7,7 @@
 <div class="yn-diagnostics">
 
   {# ── Action buttons ────────────────────────────────────────────── #}
-  <div class="yn-actions" style="display:flex;gap:0.75rem;margin-bottom:1.5rem;align-items:center;">
+  <div class="yn-actions">
 
     <form method="post">
       {{ csrfInput() }}
@@ -39,12 +39,11 @@
       <button type="submit" class="btn">Sync from Blitz</button>
     </form>
 
-    <form method="post" style="margin-left:auto">
+    <form method="post" class="yn-actions__clear">
       {{ csrfInput() }}
       {{ actionInput('yesterdays-news/cp/clear') }}
       {{ redirectInput(craft.app.request.url) }}
-      <button type="submit" class="btn"
-        style="color:var(--error-color,#CF1124)"
+      <button type="submit" class="btn yn-danger"
         onclick="return confirm('Clear all Yesterday\'s News visit data? This cannot be undone.')">
         Clear all data
       </button>
@@ -53,19 +52,19 @@
   </div>
 
   {# ── Page visits summary ────────────────────────────────────────── #}
-  <div class="yn-meta" style="display:flex;gap:2rem;flex-wrap:wrap;margin-bottom:1.5rem;padding:1rem 1.25rem;background:var(--gray-050,#f3f3f3);border-radius:var(--medium-border-radius,5px);font-size:0.875rem;">
+  <div class="yn-meta">
     <span><strong>Page threshold:</strong> {{ thresholdHuman }}</span>
     {% if cutoffLocal %}
       <span>
         <strong>Cutoff:</strong>
-        {{ cutoffLocal }} {{ cutoffTzAbbr }}{% if appTimezone != 'UTC' %} <small style="color:var(--medium-text-color)">[{{ cutoffUtc }} UTC]</small>{% endif %}
+        {{ cutoffLocal }} {{ cutoffTzAbbr }}{% if appTimezone != 'UTC' %} <small class="yn-muted">[{{ cutoffUtc }} UTC]</small>{% endif %}
       </span>
     {% endif %}
     <span><strong>Tracked:</strong> {{ totalCount }}</span>
-    <span style="color:var(--error-color,#CF1124)"><strong>Stale:</strong> {{ staleCount }}</span>
-    <span style="color:var(--success-color,#23922a)"><strong>Fresh:</strong> {{ freshCount }}</span>
+    <span class="yn-stale"><strong>Stale:</strong> {{ staleCount }}</span>
+    <span class="yn-fresh"><strong>Fresh:</strong> {{ freshCount }}</span>
     {% if pendingCount > 0 %}
-      <span style="color:var(--warning-color,#b95000)"><strong>Buffered:</strong> {{ pendingCount }}</span>
+      <span class="yn-buffered"><strong>Buffered:</strong> {{ pendingCount }}</span>
     {% endif %}
   </div>
 
@@ -77,31 +76,31 @@
       <table class="data fullwidth yn-table">
         <thead>
           <tr>
-            <th class="thin" style="width:2rem;text-align:center"><!--status--></th>
+            <th class="thin yn-col-status"><!--status--></th>
             <th>URL</th>
-            <th style="white-space:nowrap">Last visited <small>UTC</small></th>
-            <th style="white-space:nowrap">Age</th>
-            <th style="white-space:nowrap">Action</th>
+            <th class="yn-nowrap">Last visited <small>UTC</small></th>
+            <th class="yn-nowrap">Age</th>
+            <th class="yn-nowrap">Action</th>
           </tr>
         </thead>
         <tbody>
           {% for row in rows %}
             <tr class="{{ row.isStale ? 'yn-stale' : 'yn-fresh' }}">
-              <td style="text-align:center">
+              <td class="yn-col-status">
                 {% if row.isStale %}
                   <span class="status off" title="Scheduled for pruning"></span>
                 {% else %}
                   <span class="status on" title="Staying in cache"></span>
                 {% endif %}
               </td>
-              <td><code style="font-size:0.8125rem">{{ row.url }}</code></td>
-              <td style="white-space:nowrap;font-size:0.8125rem;color:var(--medium-text-color)">{{ row.lastVisitedAt|slice(0, 16) }}</td>
-              <td style="white-space:nowrap;font-size:0.8125rem">{{ row.ageHuman }}</td>
-              <td style="white-space:nowrap;font-size:0.8125rem">
+              <td><code>{{ row.url }}</code></td>
+              <td class="yn-date">{{ row.lastVisitedAt|slice(0, 16) }}</td>
+              <td class="yn-nowrap">{{ row.ageHuman }}</td>
+              <td class="yn-nowrap">
                 {% if row.isStale %}
-                  <span style="color:var(--error-color,#CF1124)">Prune on next run</span>
+                  <span class="yn-stale">Prune on next run</span>
                 {% else %}
-                  <span style="color:var(--medium-text-color)">Keep for {{ row.pruneInHuman }}</span>
+                  <span class="yn-muted">Keep for {{ row.pruneInHuman }}</span>
                 {% endif %}
               </td>
             </tr>
@@ -113,15 +112,15 @@
 
   {# ── Cached includes ───────────────────────────────────────────── #}
   {% if includeTotalCount is defined %}
-    <h3 style="margin-top:2.5rem;margin-bottom:0.5rem">
+    <h3 class="yn-heading">
       Cached Includes
-      <span style="font-weight:normal;font-size:0.875rem;color:var(--medium-text-color)">
+      <span class="yn-heading__subtitle">
         — {{ includeTotalCount }} tracked,
-        <span style="color:var(--error-color,#CF1124)">{{ includeReadyCount }} ready to prune</span>
+        <span class="yn-stale">{{ includeReadyCount }} ready to prune</span>
       </span>
     </h3>
 
-    <p style="margin-bottom:1rem;font-size:0.8125rem;color:var(--medium-text-color)">
+    <p class="yn-desc">
       Pruned when entry age &gt; {{ (entryAgeThreshold / 86400)|round(0) }}d
       <em>and</em> cache age &gt; {{ (includeThreshold / 3600)|round(0) }}h.
       New/recently-updated entries are never pruned regardless of cache age.
@@ -134,62 +133,62 @@
         <table class="data fullwidth yn-table">
           <thead>
             <tr>
-              <th class="thin" style="width:2rem;text-align:center"><!--status--></th>
+              <th class="thin yn-col-status"><!--status--></th>
               <th>Template</th>
-              <th style="white-space:nowrap">Entry ID</th>
-              <th style="white-space:nowrap">Entry age</th>
-              <th style="white-space:nowrap">Cache age</th>
-              <th style="white-space:nowrap">Status</th>
+              <th class="yn-nowrap">Entry ID</th>
+              <th class="yn-nowrap">Entry age</th>
+              <th class="yn-nowrap">Cache age</th>
+              <th class="yn-nowrap">Status</th>
             </tr>
           </thead>
           <tbody>
             {% for row in includeRows %}
               <tr>
-                <td style="text-align:center">
+                <td class="yn-col-status">
                   {% if row.isReadyToPrune %}
                     <span class="status off" title="Ready to prune"></span>
                   {% elseif row.dateCached is null %}
-                    <span class="status" style="background:var(--gray-300,#ccc)" title="Not in blitz_caches"></span>
+                    <span class="status yn-status-unknown" title="Not in blitz_caches"></span>
                   {% else %}
                     <span class="status on" title="Waiting"></span>
                   {% endif %}
                 </td>
 
-                <td style="font-size:0.8125rem">
+                <td>
                   <code>{{ row.template }}</code>
                 </td>
 
-                <td style="white-space:nowrap;font-size:0.8125rem">
+                <td class="yn-nowrap">
                   {{ row.entryId }}
                 </td>
 
-                <td style="white-space:nowrap;font-size:0.8125rem">
+                <td class="yn-nowrap">
                   {% if row.entryAgeHuman %}
-                    <span{% if not row.isEntryOld %} style="color:var(--success-color,#23922a)" title="Entry updated recently — protected"{% endif %}>
+                    <span{% if not row.isEntryOld %} class="yn-fresh" title="Entry updated recently — protected"{% endif %}>
                       {{ row.entryAgeHuman }}
                     </span>
                   {% else %}
-                    <span style="color:var(--medium-text-color)">unknown</span>
+                    <span class="yn-muted">unknown</span>
                   {% endif %}
                 </td>
 
-                <td style="white-space:nowrap;font-size:0.8125rem">
+                <td class="yn-nowrap">
                   {% if row.cacheAgeHuman %}
                     {{ row.cacheAgeHuman }}
                   {% else %}
-                    <span style="color:var(--medium-text-color)">not cached</span>
+                    <span class="yn-muted">not cached</span>
                   {% endif %}
                 </td>
 
-                <td style="white-space:nowrap;font-size:0.8125rem">
+                <td class="yn-nowrap">
                   {% if row.isReadyToPrune %}
-                    <span style="color:var(--error-color,#CF1124)">Prune on next run</span>
+                    <span class="yn-stale">Prune on next run</span>
                   {% elseif row.dateCached is null %}
-                    <span style="color:var(--medium-text-color)">Not cached</span>
+                    <span class="yn-muted">Not cached</span>
                   {% elseif not row.isEntryOld %}
-                    <span style="color:var(--success-color,#23922a)">Entry too new</span>
+                    <span class="yn-fresh">Entry too new</span>
                   {% elseif not row.isCacheOld %}
-                    <span style="color:var(--medium-text-color)">Cache too fresh</span>
+                    <span class="yn-muted">Cache too fresh</span>
                   {% endif %}
                 </td>
               </tr>

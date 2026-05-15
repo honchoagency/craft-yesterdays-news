@@ -6,6 +6,7 @@ use Craft;
 use craft\base\Utility;
 use craft\db\Query;
 use craft\web\View;
+use honchoagency\yesterdaysnews\web\assets\cp\CPAsset;
 use honchoagency\yesterdaysnews\YesterdaysNews;
 
 /**
@@ -31,6 +32,8 @@ class Diagnostics extends Utility
 
     public static function contentHtml(): string
     {
+        Craft::$app->getView()->registerAssetBundle(CPAsset::class);
+
         $plugin    = YesterdaysNews::getInstance();
         $settings  = $plugin->getSettings();
         $threshold = $settings->threshold;

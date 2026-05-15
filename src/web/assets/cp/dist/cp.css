@@ -1,0 +1,85 @@
+/* =========================================================================
+   Yesterday's News — CP Diagnostics
+   ========================================================================= */
+
+/* Action bar */
+
+.yn-diagnostics .yn-actions {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    align-items: center;
+}
+
+.yn-diagnostics .yn-actions__clear {
+    margin-left: auto;
+}
+
+.yn-diagnostics .yn-actions .badge {
+    margin-left: 0.35rem;
+}
+
+/* Summary bar */
+
+.yn-diagnostics .yn-meta {
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+    background: var(--gray-050, #f3f3f3);
+    border-radius: var(--medium-border-radius, 5px);
+    font-size: 0.875rem;
+}
+
+/* Semantic text colours */
+
+.yn-diagnostics .yn-stale    { color: var(--error-color, #CF1124); }
+.yn-diagnostics .yn-fresh    { color: var(--success-color, #23922a); }
+.yn-diagnostics .yn-buffered { color: var(--warning-color, #b95000); }
+.yn-diagnostics .yn-muted    { color: var(--medium-text-color); }
+
+/* Table columns and cells */
+
+.yn-diagnostics .yn-table th.yn-col-status,
+.yn-diagnostics .yn-table td.yn-col-status {
+    width: 2rem;
+    text-align: center;
+}
+
+.yn-diagnostics .yn-table th.yn-nowrap { white-space: nowrap; }
+
+.yn-diagnostics .yn-table td              { font-size: 0.8125rem; }
+.yn-diagnostics .yn-table td.yn-nowrap   { white-space: nowrap; }
+.yn-diagnostics .yn-table td.yn-date     { white-space: nowrap; color: var(--medium-text-color); }
+
+/* Section headings and descriptions */
+
+.yn-diagnostics .yn-heading {
+    margin-top: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.yn-diagnostics .yn-heading__subtitle {
+    font-weight: normal;
+    font-size: 0.875rem;
+    color: var(--medium-text-color);
+}
+
+.yn-diagnostics .yn-desc {
+    margin-bottom: 1rem;
+    font-size: 0.8125rem;
+    color: var(--medium-text-color);
+}
+
+/* Danger button */
+
+.yn-diagnostics .yn-danger {
+    color: var(--error-color, #CF1124);
+}
+
+/* Status dot variant for "not in blitz_caches" (no standard Craft variable) */
+
+.yn-diagnostics .status.yn-status-unknown {
+    background: var(--gray-300, #ccc);
+}
