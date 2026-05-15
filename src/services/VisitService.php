@@ -32,6 +32,10 @@ class VisitService extends Component
      */
     public function bufferVisit(string $rawPath): void
     {
+        if (!YesterdaysNews::blitzIsInstalled()) {
+            return;
+        }
+
         $siteUri = $this->normalisePath($rawPath);
 
         if ($siteUri === null) {
@@ -142,8 +146,7 @@ class VisitService extends Component
             }
         };
 
-        // Gracefully no-op if Blitz is not installed.
-        if (Craft::$app->getPlugins()->getPlugin('blitz') === null) {
+        if (!YesterdaysNews::blitzIsInstalled()) {
             $log("Blitz plugin not found — skipping prune.", true);
             return;
         }
@@ -251,7 +254,7 @@ class VisitService extends Component
             return;
         }
 
-        if (Craft::$app->getPlugins()->getPlugin('blitz') === null) {
+        if (!YesterdaysNews::blitzIsInstalled()) {
             return;
         }
 
@@ -307,6 +310,10 @@ class VisitService extends Component
      */
     public function getIncludeCandidates(): array
     {
+        if (!YesterdaysNews::blitzIsInstalled()) {
+            return [];
+        }
+
         $includeTemplates = YesterdaysNews::getInstance()->getSettings()->includeTemplates;
 
         if (empty($includeTemplates)) {
@@ -436,7 +443,7 @@ class VisitService extends Component
             }
         };
 
-        if (Craft::$app->getPlugins()->getPlugin('blitz') === null) {
+        if (!YesterdaysNews::blitzIsInstalled()) {
             $log('Blitz plugin not found — skipping sync.');
             return 0;
         }

@@ -147,6 +147,7 @@ class Diagnostics extends Utility
         }
 
         return Craft::$app->getView()->renderTemplate('yesterdays-news/_diagnostics', [
+            'blitzIsInstalled'   => YesterdaysNews::blitzIsInstalled(),
             'rows'               => $rows,
             'threshold'          => $threshold,
             'pagePruningEnabled' => $settings->pagePruningEnabled,

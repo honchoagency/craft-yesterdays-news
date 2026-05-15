@@ -29,6 +29,11 @@ class YesterdaysNews extends Plugin
     public string $schemaVersion = '1.0.0';
     public bool $hasCpSettings = false;
 
+    public static function blitzIsInstalled(): bool
+    {
+        return Craft::$app->getPlugins()->getPlugin('blitz') !== null;
+    }
+
     public static function config(): array
     {
         return [

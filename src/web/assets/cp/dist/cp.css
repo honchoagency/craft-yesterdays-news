@@ -2,6 +2,17 @@
    Yesterday's News — CP Diagnostics
    ========================================================================= */
 
+/* Blitz not installed notice */
+
+.yn-diagnostics .yn-notice {
+    background-color: var(--red-050);
+    border-inline-start: 6px solid var(--fg-error);
+    color: var(--fg-error);
+    position: relative;
+    margin-bottom: 1.5rem;
+    padding: 1rem 1.25rem;
+}
+
 /* Action bar */
 
 .yn-diagnostics .yn-actions {

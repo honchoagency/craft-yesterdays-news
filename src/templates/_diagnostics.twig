@@ -6,6 +6,16 @@
 
 <div class="yn-diagnostics">
 
+  {# ── Blitz not installed notice ────────────────────────────────── #}
+  {% if not blitzIsInstalled %}
+    <div class="yn-notice">
+      <span data-icon="alert"></span>
+      <strong>Blitz is not installed.</strong>
+      Yesterday's News requires the Blitz plugin to track and prune cached pages.
+      Visit tracking and all prune operations are disabled.
+    </div>
+  {% endif %}
+
   {# ── Action buttons ────────────────────────────────────────────── #}
   <div class="yn-actions">
 
@@ -13,7 +23,7 @@
       {{ csrfInput() }}
       {{ actionInput('yesterdays-news/cp/flush') }}
       {{ redirectInput(craft.app.request.url) }}
-      <button type="submit" class="btn">
+      <button type="submit" class="btn{{ not blitzIsInstalled ? ' disabled' }}"{% if not blitzIsInstalled %} disabled{% endif %}>
         Flush buffer to DB{% if pendingCount > 0 %} <span class="badge">{{ pendingCount }}</span>{% endif %}
       </button>
     </form>
@@ -22,8 +32,8 @@
       {{ csrfInput() }}
       {{ actionInput('yesterdays-news/cp/prune') }}
       {{ redirectInput(craft.app.request.url) }}
-      {% set pruneDisabled = staleCount == 0 and includeReadyCount == 0 %}
-      <button type="submit" class="btn submit"{% if pruneDisabled %} disabled{% endif %}>
+      {% set pruneDisabled = not blitzIsInstalled or (staleCount == 0 and includeReadyCount == 0) %}
+      <button type="submit" class="btn submit{{ pruneDisabled ? ' disabled' }}"{% if pruneDisabled %} disabled{% endif %}>
         Prune
         {% if staleCount > 0 %}{{ staleCount }} stale URL{{ staleCount != 1 ? 's' }}{% endif %}
         {% if staleCount > 0 and includeReadyCount > 0 %} + {% endif %}
@@ -36,7 +46,7 @@
       {{ csrfInput() }}
       {{ actionInput('yesterdays-news/cp/sync') }}
       {{ redirectInput(craft.app.request.url) }}
-      <button type="submit" class="btn">Sync from Blitz</button>
+      <button type="submit" class="btn{{ not blitzIsInstalled ? ' disabled' }}"{% if not blitzIsInstalled %} disabled{% endif %}>Sync from Blitz</button>
     </form>
 
     <form method="post" class="yn-actions__clear">
