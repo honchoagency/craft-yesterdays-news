@@ -11,19 +11,32 @@ use craft\base\Model;
  *
  * return [
  *     '*' => [
- *         'threshold'        => 86400,
- *         'entryAgeThreshold' => 2592000,
- *         'includeThreshold' => 86400,
- *         'includeTemplates' => [],
+ *         'pagePruningEnabled'    => true,
+ *         'threshold'             => 86400,
+ *         'includePruningEnabled' => true,
+ *         'entryAgeThreshold'     => 2592000,
+ *         'includeThreshold'      => 86400,
+ *         'includeTemplates'      => [],
+ *     ],
  * ];
  */
 class Settings extends Model
 {
     /**
+     * Whether stale page URLs should be pruned from the Blitz cache.
+     */
+    public bool $pagePruningEnabled = true;
+
+    /**
      * Age threshold in seconds after which a page URL is considered stale and
-     * pruned from the Blitz cache. Default: 86400 (24 hours). Set to 0 to disable.
+     * pruned from the Blitz cache. Default: 86400 (24 hours).
      */
     public int $threshold = 86400;
+
+    /**
+     * Whether stale cached includes should be pruned from the Blitz cache.
+     */
+    public bool $includePruningEnabled = true;
 
     /**
      * How long (seconds) since an entry's last dateUpdated before its cached
@@ -34,7 +47,6 @@ class Settings extends Model
     /**
      * How long (seconds) a cached include record must be before it is eligible
      * for pruning (even if the entry is old). Default: 86400 (24 hours).
-     * Set to 0 to disable template-based include pruning.
      */
     public int $includeThreshold = 86400;
 
@@ -50,9 +62,10 @@ class Settings extends Model
 
     public function defineRules(): array
     {
-        return [
-            [['threshold', 'entryAgeThreshold', 'includeThreshold'], 'integer', 'min' => 0],
+        return array_merge(parent::defineRules(), [
+            [['pagePruningEnabled', 'includePruningEnabled'], 'boolean'],
+            [['threshold', 'entryAgeThreshold', 'includeThreshold'], 'integer', 'min' => 1],
             [['includeTemplates'], 'safe'],
-        ];
+        ]);
     }
 }

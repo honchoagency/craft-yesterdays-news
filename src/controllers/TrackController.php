@@ -12,9 +12,8 @@ use yii\web\Response;
  *
  * Route: POST /groundcontrol/yesterdays-news/track
  *
- * CSRF is validated normally. The beacon waits for Blitz's afterBlitzInjectAll
- * event (which fires after Blitz injects live CSRF tokens into the page) and
- * then reads the token from the DOM and includes it in the POST body.
+ * CSRF validation is disabled — this is a read-only analytics endpoint. Pages
+ * are served from Blitz static cache and may not have a CSRF token available.
  */
 class TrackController extends Controller
 {
@@ -42,7 +41,7 @@ class TrackController extends Controller
     /**
      * POST /groundcontrol/yesterdays-news/track
      *
-     * Accepts JSON body: { "url": "/path/to/page", "CRAFT_CSRF_TOKEN": "..." }
+     * Accepts a POST body param `url` containing the page path to record.
      */
     public function actionIndex(): Response
     {

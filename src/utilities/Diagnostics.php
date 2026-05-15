@@ -5,7 +5,6 @@ namespace honchoagency\yesterdaysnews\utilities;
 use Craft;
 use craft\base\Utility;
 use craft\db\Query;
-use craft\helpers\Db;
 use craft\web\View;
 use honchoagency\yesterdaysnews\YesterdaysNews;
 
@@ -33,7 +32,8 @@ class Diagnostics extends Utility
     public static function contentHtml(): string
     {
         $plugin    = YesterdaysNews::getInstance();
-        $threshold = $plugin->getSettings()->threshold;
+        $settings  = $plugin->getSettings();
+        $threshold = $settings->threshold;
 
         $cutoff      = null;
         $cutoffLocal = null; // formatted in app timezone
@@ -41,7 +41,7 @@ class Diagnostics extends Utility
         $cutoffTzAbbr = null; // e.g. 'EST'
         $appTimezone = Craft::$app->getTimeZone();
 
-        if ($threshold > 0) {
+        if ($settings->pagePruningEnabled) {
             $cutoff = new \DateTime('now', new \DateTimeZone('UTC'));
             $cutoff->modify('-' . $threshold . ' seconds');
             $cutoffUtc = $cutoff->format('Y-m-d H:i');
@@ -67,7 +67,7 @@ class Diagnostics extends Utility
             // strtotime() misinterpreting it as the app's local timezone.
             $lastVisitedTs = (new \DateTime($raw['lastVisitedAt'], new \DateTimeZone('UTC')))->getTimestamp();
             $ageSeconds    = $now - $lastVisitedTs;
-            $isStale       = $threshold > 0
+            $isStale       = $settings->pagePruningEnabled
                 && $cutoff !== null
                 && $raw['lastVisitedAt'] <= $cutoff->format('Y-m-d H:i:s');
 
@@ -81,115 +81,53 @@ class Diagnostics extends Utility
                 'ageSeconds'     => $ageSeconds,
                 'ageHuman'       => self::formatAge($ageSeconds),
                 'isStale'        => $isStale,
-                'pruneInSeconds' => (!$isStale && $threshold > 0) ? ($threshold - $ageSeconds) : null,
-                'pruneInHuman'   => (!$isStale && $threshold > 0) ? self::formatAge($threshold - $ageSeconds) : null,
+                'pruneInSeconds' => (!$isStale && $settings->pagePruningEnabled) ? ($threshold - $ageSeconds) : null,
+                'pruneInHuman'   => (!$isStale && $settings->pagePruningEnabled) ? self::formatAge($threshold - $ageSeconds) : null,
             ];
         }
 
         // --- Cached include candidates ---
-        $settings          = $plugin->getSettings();
-        $includeTemplates  = $settings->includeTemplates;
         $includeThreshold  = $settings->includeThreshold;
         $entryAgeThreshold = $settings->entryAgeThreshold;
 
-        $includeRows      = [];
+        $includeRows       = [];
         $includeReadyCount = 0;
 
-        if (!empty($includeTemplates) && $includeThreshold > 0 && $entryAgeThreshold > 0) {
-            $includeCutoff = (new \DateTime('now', new \DateTimeZone('UTC')))->modify('-' . $includeThreshold . ' seconds');
-            $entryCutoff   = (new \DateTime('now', new \DateTimeZone('UTC')))->modify('-' . $entryAgeThreshold . ' seconds');
-            $includeCutoffStr = $includeCutoff->format('Y-m-d H:i:s');
-            $entryCutoffStr   = $entryCutoff->format('Y-m-d H:i:s');
+        if ($settings->includePruningEnabled && !empty($settings->includeTemplates)) {
+            $includeCutoffStr = (new \DateTime('now', new \DateTimeZone('UTC')))
+                ->modify('-' . $includeThreshold . ' seconds')
+                ->format('Y-m-d H:i:s');
+            $entryCutoffStr = (new \DateTime('now', new \DateTimeZone('UTC')))
+                ->modify('-' . $entryAgeThreshold . ' seconds')
+                ->format('Y-m-d H:i:s');
 
-            foreach ($includeTemplates as $template => $entryIdKey) {
-                $blitzRows = (new Query())
-                    ->select(['index', 'siteId', 'params'])
-                    ->from('{{%blitz_includes}}')
-                    ->where(['template' => $template])
-                    ->all();
+            foreach ($plugin->visits->getIncludeCandidates() as $candidate) {
+                $dateUpdated     = $candidate['dateUpdated'];
+                $dateCached      = $candidate['dateCached'];
+                $entryAgeSeconds = $dateUpdated !== null
+                    ? $now - (new \DateTime($dateUpdated, new \DateTimeZone('UTC')))->getTimestamp()
+                    : null;
+                $cacheAgeSeconds = $now - (new \DateTime($dateCached, new \DateTimeZone('UTC')))->getTimestamp();
+                $isEntryOld      = $dateUpdated !== null && $dateUpdated <= $entryCutoffStr;
+                $isCacheOld      = $dateCached <= $includeCutoffStr;
+                $isReadyToPrune  = $isEntryOld && $isCacheOld;
 
-                if (empty($blitzRows)) {
-                    continue;
+                if ($isReadyToPrune) {
+                    $includeReadyCount++;
                 }
 
-                // Parse params JSON to extract entry IDs.
-                $indexToEntryId = [];
-                $indexToSiteId  = [];
-                foreach ($blitzRows as $row) {
-                    $params  = json_decode($row['params'], true);
-                    $entryId = isset($params[$entryIdKey]) ? (int) $params[$entryIdKey] : null;
-                    if ($entryId !== null) {
-                        $indexToEntryId[(string) $row['index']] = $entryId;
-                        $indexToSiteId[(string) $row['index']]  = (int) $row['siteId'];
-                    }
-                }
-
-                if (empty($indexToEntryId)) {
-                    continue;
-                }
-
-                // Fetch dateUpdated for all related entries in one query.
-                $elementData = (new Query())
-                    ->select(['id', 'dateUpdated'])
-                    ->from('{{%elements}}')
-                    ->where(['id' => array_values($indexToEntryId)])
-                    ->indexBy('id')
-                    ->all();
-
-                // Fetch dateCached from blitz_caches for all URIs in one query.
-                $uriMap = [];
-                foreach ($indexToEntryId as $index => $entryId) {
-                    $uri = '_cached_include_' . $index . '?p=_cached_include_' . $index;
-                    $uriMap[$uri] = ['index' => $index, 'entryId' => $entryId];
-                }
-
-                $cacheData = (new Query())
-                    ->select(['uri', 'dateCached'])
-                    ->from('{{%blitz_caches}}')
-                    ->where(['uri' => array_keys($uriMap)])
-                    ->indexBy('uri')
-                    ->all();
-
-                foreach ($uriMap as $uri => $info) {
-                    $entryId    = $info['entryId'];
-                    $index      = $info['index'];
-                    $elementRow = $elementData[$entryId] ?? null;
-                    $cacheRow   = $cacheData[$uri] ?? null;
-                    $dateCached = $cacheRow['dateCached'] ?? null;
-
-                    if ($dateCached === null) {
-                        continue; // No cache record, skip this include
-                    }
-
-                    $dateUpdated = $elementRow['dateUpdated'] ?? null;
-                    $entryAgeSeconds = $dateUpdated !== null
-                        ? $now - (new \DateTime($dateUpdated, new \DateTimeZone('UTC')))->getTimestamp()
-                        : null;
-                    $isEntryOld = $dateUpdated !== null && $dateUpdated <= $entryCutoffStr;
-
-                    $cacheAgeSeconds = $dateCached !== null
-                        ? $now - (new \DateTime($dateCached, new \DateTimeZone('UTC')))->getTimestamp()
-                        : null;
-                    $isCacheOld = $dateCached !== null && $dateCached <= $includeCutoffStr;
-
-                    $isReadyToPrune = $isEntryOld && $isCacheOld;
-                    if ($isReadyToPrune) {
-                        $includeReadyCount++;
-                    }
-
-                    $includeRows[] = [
-                        'template'       => $template,
-                        'entryId'        => $entryId,
-                        'uri'            => $uri,
-                        'dateUpdated'    => $dateUpdated,
-                        'entryAgeHuman'  => $entryAgeSeconds !== null ? self::formatAge($entryAgeSeconds) : null,
-                        'isEntryOld'     => $isEntryOld,
-                        'dateCached'     => $dateCached,
-                        'cacheAgeHuman'  => $cacheAgeSeconds !== null ? self::formatAge($cacheAgeSeconds) : null,
-                        'isCacheOld'     => $isCacheOld,
-                        'isReadyToPrune' => $isReadyToPrune,
-                    ];
-                }
+                $includeRows[] = [
+                    'template'       => $candidate['template'],
+                    'entryId'        => $candidate['entryId'],
+                    'uri'            => $candidate['uri'],
+                    'dateUpdated'    => $dateUpdated,
+                    'entryAgeHuman'  => $entryAgeSeconds !== null ? self::formatAge($entryAgeSeconds) : null,
+                    'isEntryOld'     => $isEntryOld,
+                    'dateCached'     => $dateCached,
+                    'cacheAgeHuman'  => self::formatAge($cacheAgeSeconds),
+                    'isCacheOld'     => $isCacheOld,
+                    'isReadyToPrune' => $isReadyToPrune,
+                ];
             }
 
             // Sort: ready-to-prune first, then by template, then by cache age desc.
@@ -208,7 +146,8 @@ class Diagnostics extends Utility
         return Craft::$app->getView()->renderTemplate('yesterdays-news/_diagnostics', [
             'rows'               => $rows,
             'threshold'          => $threshold,
-            'thresholdHuman'     => $threshold > 0 ? self::formatAge($threshold) : 'disabled',
+            'pagePruningEnabled' => $settings->pagePruningEnabled,
+            'thresholdHuman'     => $settings->pagePruningEnabled ? self::formatAge($threshold) : 'disabled',
             'cutoffLocal'        => $cutoffLocal,
             'cutoffUtc'          => $cutoffUtc,
             'cutoffTzAbbr'       => $cutoffTzAbbr,

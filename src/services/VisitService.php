@@ -65,7 +65,11 @@ class VisitService extends Component
      * Flush the buffered visits from the Craft cache into the DB.
      *
      * Called by FlushJob on a schedule (every 5 min). Upserts all pending
-     * visits into yesterdays_news_visits and clears the buffer.
+     * visits into yesterdays_news_visits and clears the buffer only after all
+     * rows are written — if the loop fails mid-way, unwritten visits remain in
+     * the buffer and will be retried on the next flush.
+     *
+     * @throws \yii\db\Exception
      */
     public function flushBufferToDb(): void
     {
@@ -81,9 +85,6 @@ class VisitService extends Component
             if (!is_array($pending) || empty($pending)) {
                 return;
             }
-
-            // Clear the buffer first so we don't re-process visits on failure.
-            Craft::$app->getCache()->delete(self::PENDING_CACHE_KEY);
 
             $db = Craft::$app->getDb();
 
@@ -109,6 +110,8 @@ class VisitService extends Component
                 )->execute();
             }
 
+            Craft::$app->getCache()->delete(self::PENDING_CACHE_KEY);
+
             Craft::info(
                 sprintf("Yesterday's News: flushed %d visit(s) to DB.", count($pending)),
                 __METHOD__,
@@ -124,6 +127,7 @@ class VisitService extends Component
      * Called by PruneJob (no $output) and the CLI controller (passes stdout callable).
      *
      * @param callable|null $output  Optional fn(string): void for CLI stdout lines.
+     * @throws \yii\db\Exception
      */
     public function pruneStaleUrls(?callable $output = null): void
     {
@@ -147,11 +151,12 @@ class VisitService extends Component
         // Age-based template include pruning runs regardless of the page threshold.
         $this->pruneStaleTemplateIncludes($output);
 
-        $threshold = YesterdaysNews::getInstance()->getSettings()->threshold;
+        $settings  = YesterdaysNews::getInstance()->getSettings();
+        $threshold = $settings->threshold;
         $log(sprintf("Threshold: %d seconds (%.1f hours).", $threshold, $threshold / 3600));
 
-        if ($threshold <= 0) {
-            $log("Pruning disabled (threshold <= 0).");
+        if (!$settings->pagePruningEnabled) {
+            $log("Page pruning disabled.");
             return;
         }
 
@@ -222,6 +227,8 @@ class VisitService extends Component
      *
      * This means fresh/recently-updated articles always stay cached, while old
      * articles get a rolling cache window defined by $includeThreshold.
+     *
+     * @throws \yii\db\Exception
      */
     public function pruneStaleTemplateIncludes(?callable $output = null): void
     {
@@ -236,12 +243,11 @@ class VisitService extends Component
             }
         };
 
-        $settings = YesterdaysNews::getInstance()->getSettings();
-        $includeTemplates  = $settings->includeTemplates;
+        $settings          = YesterdaysNews::getInstance()->getSettings();
         $includeThreshold  = $settings->includeThreshold;
         $entryAgeThreshold = $settings->entryAgeThreshold;
 
-        if (empty($includeTemplates) || $includeThreshold <= 0 || $entryAgeThreshold <= 0) {
+        if (!$settings->includePruningEnabled || empty($settings->includeTemplates)) {
             return;
         }
 
@@ -249,7 +255,7 @@ class VisitService extends Component
             return;
         }
 
-        $now = time();
+        $now             = time();
         $includeCutoffDb = Db::prepareDateForDb(new \DateTime('@' . ($now - $includeThreshold)));
         $entryCutoffDb   = Db::prepareDateForDb(new \DateTime('@' . ($now - $entryAgeThreshold)));
 
@@ -259,76 +265,13 @@ class VisitService extends Component
             $includeThreshold / 3600,
         ));
 
-        // Collect stale (uri → [index, siteId]) across all configured templates.
-        $staleUriMap    = []; // uri → ['index' => …, 'siteId' => …]
-        $staleIndexes   = [];
+        $staleUriMap = [];
+        foreach ($this->getIncludeCandidates() as $candidate) {
+            $isEntryOld = $candidate['dateUpdated'] !== null && $candidate['dateUpdated'] <= $entryCutoffDb;
+            $isCacheOld = $candidate['dateCached'] <= $includeCutoffDb;
 
-        foreach ($includeTemplates as $template => $entryIdKey) {
-            // 1. Get all cached includes for this template.
-            $includeRows = (new \craft\db\Query())
-                ->select(['index', 'siteId', 'params'])
-                ->from('{{%blitz_includes}}')
-                ->where(['template' => $template])
-                ->all();
-
-            if (empty($includeRows)) {
-                continue;
-            }
-
-            // 2. Parse params JSON → entry ID; build index → entryId map.
-            $indexToEntryId = [];
-            $indexToSiteId  = [];
-            foreach ($includeRows as $row) {
-                $params  = json_decode($row['params'], true);
-                $entryId = isset($params[$entryIdKey]) ? (int) $params[$entryIdKey] : null;
-                if ($entryId !== null) {
-                    $indexToEntryId[(string) $row['index']] = $entryId;
-                    $indexToSiteId[(string) $row['index']]  = (int) $row['siteId'];
-                }
-            }
-
-            if (empty($indexToEntryId)) {
-                continue;
-            }
-
-            // 3. Find which of those entries have not been updated recently.
-            $oldEntryIds = (new \craft\db\Query())
-                ->select(['id'])
-                ->from('{{%elements}}')
-                ->where(['id' => array_values($indexToEntryId)])
-                ->andWhere(['<=', 'dateUpdated', $entryCutoffDb])
-                ->column();
-
-            $oldEntryIds = array_map('intval', $oldEntryIds);
-
-            if (empty($oldEntryIds)) {
-                continue;
-            }
-
-            // 4. Keep only indexes whose entry is old.
-            $candidateUriMap = [];
-            foreach ($indexToEntryId as $index => $entryId) {
-                if (in_array($entryId, $oldEntryIds, true)) {
-                    $uri = '_cached_include_' . $index . '?p=_cached_include_' . $index;
-                    $candidateUriMap[$uri] = ['index' => $index, 'siteId' => $indexToSiteId[$index]];
-                }
-            }
-
-            if (empty($candidateUriMap)) {
-                continue;
-            }
-
-            // 5. Of those, find which blitz_caches records are also old enough.
-            $staleUris = (new \craft\db\Query())
-                ->select(['uri'])
-                ->from('{{%blitz_caches}}')
-                ->where(['uri' => array_keys($candidateUriMap)])
-                ->andWhere(['<=', 'dateCached', $includeCutoffDb])
-                ->column();
-
-            foreach ($staleUris as $uri) {
-                $staleUriMap[$uri] = $candidateUriMap[$uri];
-                $staleIndexes[]    = $candidateUriMap[$uri]['index'];
+            if ($isEntryOld && $isCacheOld) {
+                $staleUriMap[$candidate['uri']] = ['index' => $candidate['index'], 'siteId' => $candidate['siteId']];
             }
         }
 
@@ -350,16 +293,99 @@ class VisitService extends Component
         $blitz->clearCache->clearUris($siteUris);
         $blitz->flushCache->flushUris($siteUris);
         $blitz->cachePurger->purgeUris($siteUris);
+    }
 
-        // $deleted = Craft::$app->getDb()->createCommand()
-        //     ->delete('{{%blitz_includes}}', ['index' => $staleIndexes])
-        //     ->execute();
+    /**
+     * Return all Blitz include candidates for the configured templates.
+     *
+     * Each candidate has a corresponding blitz_caches record. The returned array
+     * includes dateUpdated from the elements table and dateCached from blitz_caches
+     * so callers can apply their own staleness thresholds without further queries.
+     *
+     * @return array<int, array{template: string, index: string, siteId: int, uri: string, entryId: int, dateUpdated: ?string, dateCached: string}>
+     * @throws \yii\db\Exception
+     */
+    public function getIncludeCandidates(): array
+    {
+        $includeTemplates = YesterdaysNews::getInstance()->getSettings()->includeTemplates;
 
-        // $log(sprintf(
-        //     "Include template prune complete: %d cleared, %d blitz_includes row(s) deleted.",
-        //     count($siteUris),
-        //     $deleted,
-        // ));
+        if (empty($includeTemplates)) {
+            return [];
+        }
+
+        $candidates = [];
+
+        foreach ($includeTemplates as $template => $entryIdKey) {
+            $includeRows = (new \craft\db\Query())
+                ->select(['index', 'siteId', 'params'])
+                ->from('{{%blitz_includes}}')
+                ->where(['template' => $template])
+                ->all();
+
+            if (empty($includeRows)) {
+                continue;
+            }
+
+            // Parse params JSON → entryId for each include row.
+            $indexToEntryId = [];
+            $indexToSiteId  = [];
+            foreach ($includeRows as $row) {
+                $params  = json_decode($row['params'], true);
+                $entryId = isset($params[$entryIdKey]) ? (int) $params[$entryIdKey] : null;
+                if ($entryId !== null) {
+                    $indexToEntryId[(string) $row['index']] = $entryId;
+                    $indexToSiteId[(string) $row['index']]  = (int) $row['siteId'];
+                }
+            }
+
+            if (empty($indexToEntryId)) {
+                continue;
+            }
+
+            // Build URI map and fetch dateCached for each include from blitz_caches.
+            $uriToIndex = [];
+            foreach ($indexToEntryId as $index => $entryId) {
+                $uri              = '_cached_include_' . $index . '?p=_cached_include_' . $index;
+                $uriToIndex[$uri] = $index;
+            }
+
+            $cacheData = (new \craft\db\Query())
+                ->select(['uri', 'dateCached'])
+                ->from('{{%blitz_caches}}')
+                ->where(['uri' => array_keys($uriToIndex)])
+                ->indexBy('uri')
+                ->all();
+
+            // Fetch dateUpdated for all related entries in one query.
+            $elementData = (new \craft\db\Query())
+                ->select(['id', 'dateUpdated'])
+                ->from('{{%elements}}')
+                ->where(['id' => array_values($indexToEntryId)])
+                ->indexBy('id')
+                ->all();
+
+            foreach ($uriToIndex as $uri => $index) {
+                $cacheRow = $cacheData[$uri] ?? null;
+                if ($cacheRow === null) {
+                    continue; // not yet cached by Blitz
+                }
+
+                $entryId     = $indexToEntryId[$index];
+                $elementRow  = $elementData[$entryId] ?? null;
+
+                $candidates[] = [
+                    'template'    => $template,
+                    'index'       => $index,
+                    'siteId'      => $indexToSiteId[$index],
+                    'uri'         => $uri,
+                    'entryId'     => $entryId,
+                    'dateUpdated' => $elementRow['dateUpdated'] ?? null,
+                    'dateCached'  => $cacheRow['dateCached'],
+                ];
+            }
+        }
+
+        return $candidates;
     }
 
     /**
@@ -374,6 +400,8 @@ class VisitService extends Component
     /**
      * Clear all visit data — both the DB table and the in-memory cache buffer.
      * Returns the number of DB rows deleted.
+     *
+     * @throws \yii\db\Exception
      */
     public function clearAll(): int
     {
@@ -397,6 +425,7 @@ class VisitService extends Component
      *
      * @param callable|null $output  Optional fn(string): void for CLI stdout lines.
      * @return int  Number of rows inserted.
+     * @throws \yii\db\Exception
      */
     public function syncFromBlitz(?callable $output = null): int
     {
@@ -412,45 +441,50 @@ class VisitService extends Component
             return 0;
         }
 
-        // Fetch already-tracked URIs via ActiveRecord, then diff in PHP.
-        // Avoids a cross-table JOIN between tables with different collations.
-        $trackedUrls = array_flip(
-            VisitRecord::find()->select('url')->column()
-        );
+        // Build a lookup set of already-tracked URIs in batches to avoid loading
+        // the whole table into memory at once.
+        $trackedUrls = [];
+        foreach (VisitRecord::find()->select('url')->asArray()->batch(500) as $batch) {
+            foreach ($batch as $row) {
+                $trackedUrls[$row['url']] = true;
+            }
+        }
 
-        // Fetch all Blitz-cached URIs via CacheRecord (no JOIN).
-        $blitzRows = \putyourlightson\blitz\records\CacheRecord::find()
+        // Process Blitz-cached URIs in batches, inserting untracked ones as we go.
+        // Avoids a cross-table JOIN between tables that may have different collations.
+        // upsert(..., false) → INSERT IGNORE on MySQL: skips rows that were visited by
+        // a real user between our snapshot and this insert loop.
+        $db = Craft::$app->getDb();
+        $inserted = 0;
+
+        foreach (\putyourlightson\blitz\records\CacheRecord::find()
             ->select(['uri', 'dateCached'])
             ->where(['IS NOT', 'dateCached', null])
             ->asArray()
-            ->all();
+            ->batch(500) as $batch) {
+            foreach ($batch as $row) {
+                if (isset($trackedUrls[$row['uri']]) || str_starts_with($row['uri'], '_cached_include_')) {
+                    continue;
+                }
 
-        $rows = array_values(array_filter(
-            $blitzRows,
-            fn(array $row) => !array_key_exists($row['uri'], $trackedUrls)
-                && !str_starts_with($row['uri'], '_cached_include_'),
-        ));
+                $db->createCommand()->upsert('{{%yesterdays_news_visits}}', [
+                    'url'           => $row['uri'],
+                    'lastVisitedAt' => $row['dateCached'],
+                ], false)->execute();
 
-        if (empty($rows)) {
+                $trackedUrls[$row['uri']] = true;
+                $inserted++;
+            }
+        }
+
+        if ($inserted === 0) {
             $log('Sync: no untracked Blitz URIs found.');
             return 0;
         }
 
-        $log(sprintf('Sync: inserting %d untracked Blitz URI(s) into visits table...', count($rows)));
+        $log(sprintf('Sync complete: %d row(s) inserted.', $inserted));
 
-        // upsert(..., false) → INSERT IGNORE on MySQL: skips rows that have been
-        // visited by a real user between our snapshot and this insert loop.
-        $db = Craft::$app->getDb();
-        foreach ($rows as $row) {
-            $db->createCommand()->upsert('{{%yesterdays_news_visits}}', [
-                'url'           => $row['uri'],
-                'lastVisitedAt' => $row['dateCached'],
-            ], false)->execute();
-        }
-
-        $log(sprintf('Sync complete: %d row(s) inserted.', count($rows)));
-
-        return count($rows);
+        return $inserted;
     }
 
     /**
