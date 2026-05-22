@@ -1,4 +1,6 @@
-# Yesterday's News
+![Banner](./docs/img/banner.png)
+
+# Yesterday’s News
 
 A Craft CMS 5 plugin that automatically removes stale pages from your [Blitz](https://putyourlightson.com/plugins/blitz) static cache.
 

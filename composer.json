@@ -1,47 +1,54 @@
 {
-  "name": "honchoagency/craft-yesterdays-news",
-  "type": "craft-plugin",
-  "license": "mit",
-  "support": {
-    "email": "dev@honcho.agency",
-    "issues": "https://github.com/honchoagency/craft-yesterdays-news/issues?state=open",
-    "source": "https://github.com/honchoagency/craft-yesterdays-news",
-    "docs": "https://github.com/honchoagency/craft-yesterdays-news",
-    "rss": "https://github.com/honchoagency/craft-yesterdays-news/releases.atom"
-  },
-  "require": {
-    "php": ">=8.2",
-    "craftcms/cms": "^5.9.0"
-  },
-  "require-dev": {
-    "craftcms/ecs": "dev-main",
-    "craftcms/phpstan": "dev-main"
-  },
-  "autoload": {
-    "psr-4": {
-      "honchoagency\\yesterdaysnews\\": "src/"
-    }
-  },
-  "extra": {
-    "handle": "yesterdays-news",
-    "name": "Yesterday's News",
-    "developer": "honchoagency",
-    "documentationUrl": "https://github.com/honchoagency/craft-yesterdays-news",
-    "class": "honchoagency\\yesterdaysnews\\YesterdaysNews"
-  },
-  "scripts": {
-    "check-cs": "ecs check --ansi",
-    "fix-cs": "ecs check --ansi --fix",
-    "phpstan": "phpstan --memory-limit=1G"
-  },
-  "config": {
-    "sort-packages": true,
-    "platform": {
-      "php": "8.2"
+    "name": "honchoagency/craft-yesterdays-news",
+    "description": "Automatically removes unvisited pages from your Blitz cache.",
+    "type": "craft-plugin",
+    "license": "mit",
+    "authors": [
+        {
+            "name": "honchoagency",
+            "homepage": "https://honcho.agency"
+        }
+    ],
+    "support": {
+        "email": "dev@honcho.agency",
+        "issues": "https://github.com/honchoagency/craft-yesterdays-news/issues?state=open",
+        "source": "https://github.com/honchoagency/craft-yesterdays-news",
+        "docs": "https://github.com/honchoagency/craft-yesterdays-news",
+        "rss": "https://github.com/honchoagency/craft-yesterdays-news/releases.atom"
     },
-    "allow-plugins": {
-      "yiisoft/yii2-composer": true,
-      "craftcms/plugin-installer": true
+    "require": {
+        "php": ">=8.2",
+        "craftcms/cms": "^5.9.0"
+    },
+    "require-dev": {
+        "craftcms/ecs": "dev-main",
+        "craftcms/phpstan": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {
+            "honchoagency\\yesterdaysnews\\": "src/"
+        }
+    },
+    "extra": {
+        "handle": "yesterdays-news",
+        "name": "Yesterday’s News",
+        "developer": "Honcho Agency",
+        "documentationUrl": "https://github.com/honchoagency/craft-yesterdays-news",
+        "class": "honchoagency\\yesterdaysnews\\YesterdaysNews"
+    },
+    "scripts": {
+        "check-cs": "ecs check --ansi",
+        "fix-cs": "ecs check --ansi --fix",
+        "phpstan": "phpstan --memory-limit=1G"
+    },
+    "config": {
+        "sort-packages": true,
+        "platform": {
+            "php": "8.2"
+        },
+        "allow-plugins": {
+            "yiisoft/yii2-composer": true,
+            "craftcms/plugin-installer": true
+        }
     }
-  }
 }
