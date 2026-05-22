@@ -27,7 +27,7 @@ use yii\base\Event;
 class YesterdaysNews extends Plugin
 {
     public string $schemaVersion = '1.0.0';
-    public bool $hasCpSettings = false;
+    public bool $hasCpSettings = true;
 
     public static function blitzIsInstalled(): bool
     {
@@ -84,6 +84,15 @@ class YesterdaysNews extends Plugin
         return Craft::createObject(Settings::class);
     }
 
+    protected function settingsHtml(): ?string
+    {
+        return Craft::$app->view->renderTemplate('yesterdays-news/_settings', [
+            'plugin' => $this,
+            'settings' => $this->getSettings(),
+            'config' => Craft::$app->getConfig()->getConfigFromFile('yesterdays-news'),
+        ]);
+    }
+
     private function attachEventHandlers(): void
     {
         // Register the plugin's templates directory as a site template root.
@@ -106,9 +115,11 @@ class YesterdaysNews extends Plugin
             View::class,
             View::EVENT_END_BODY,
             function (Event $event): void {
-                if (Craft::$app->getResponse()->statusCode !== 200) {
+
+                if (!$this->shouldInjectBeacon()) {
                     return;
                 }
+
                 echo Craft::$app->getView()->renderTemplate(
                     'yesterdays-news/_beacon',
                     [],
@@ -116,5 +127,44 @@ class YesterdaysNews extends Plugin
                 );
             }
         );
+    }
+
+    private function shouldInjectBeacon(): bool
+    {
+        $request = Craft::$app->getRequest();
+        $settings = $this->getSettings();
+        $url = $request->getUrl();
+
+        // Don't inject the beacon if it's not enabled in settings.
+        if (!$settings->beaconEnabled) {
+            return false;
+        }
+
+        // Only inject the beacon on site requests — skip CP and console requests.
+        if (!$request->getIsSiteRequest()) {
+            return false;
+        }
+
+        // Don't inject the beacon on preview requests — those URLs are never cached
+        // by Blitz, so recording them would generate spurious visit records.
+        if ($request->getIsPreview()) {
+            return false;
+        }
+
+        // Only inject into HTML responses. Check the raw Accept header for an
+        // explicit text/html entry — don't honour */* wildcards, which appear
+        // in CSS/font/asset requests as a low-priority fallback and would
+        // otherwise cause the beacon to fire on non-HTML routes.
+        if (!str_contains($request->getHeaders()->get('Accept', ''), 'text/html')) {
+            return false;
+        }
+
+        // Only inject the beacon on successful 200 responses, to avoid
+        // tracking errors or redirects.
+        if (Craft::$app->getResponse()->statusCode !== 200) {
+            return false;
+        }
+
+        return true;
     }
 }

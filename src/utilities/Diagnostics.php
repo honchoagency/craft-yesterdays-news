@@ -27,7 +27,13 @@ class Diagnostics extends Utility
 
     public static function icon(): ?string
     {
-        return 'newspaper';
+        $iconPath = Craft::getAlias('@honchoagency/yesterdaysnews/icon-mask.svg');
+
+        if (!is_string($iconPath)) {
+            return null;
+        }
+
+        return $iconPath;
     }
 
     public static function contentHtml(): string

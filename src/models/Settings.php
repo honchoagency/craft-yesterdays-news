@@ -23,6 +23,12 @@ use craft\base\Model;
 class Settings extends Model
 {
     /**
+     * Whether the JS beacon should be injected into frontend pages.
+     * Disable this to stop tracking visits without uninstalling the plugin.
+     */
+    public bool $beaconEnabled = true;
+
+    /**
      * Whether stale page URLs should be pruned from the Blitz cache.
      */
     public bool $pagePruningEnabled = true;
@@ -60,10 +66,36 @@ class Settings extends Model
      */
     public array $includeTemplates = [];
 
+    /**
+     * Accept both the assoc format from config files (['template' => 'paramKey'])
+     * and the row-array format sent by Craft's editable table field
+     * ([['template' => '...', 'paramKey' => '...'], ...]).
+     *
+     * @param array<mixed> $value
+     */
+    public function setIncludeTemplates(array $value): void
+    {
+        $first = reset($value);
+
+        if (is_array($first)) {
+            $result = [];
+            foreach ($value as $row) {
+                $template = trim($row['template'] ?? '');
+                $paramKey = trim($row['paramKey'] ?? '');
+                if ($template !== '' && $paramKey !== '') {
+                    $result[$template] = $paramKey;
+                }
+            }
+            $this->includeTemplates = $result;
+        } else {
+            $this->includeTemplates = $value;
+        }
+    }
+
     public function defineRules(): array
     {
         return array_merge(parent::defineRules(), [
-            [['pagePruningEnabled', 'includePruningEnabled'], 'boolean'],
+            [['beaconEnabled', 'pagePruningEnabled', 'includePruningEnabled'], 'boolean'],
             [['threshold', 'entryAgeThreshold', 'includeThreshold'], 'integer', 'min' => 1],
             [['includeTemplates'], 'safe'],
         ]);

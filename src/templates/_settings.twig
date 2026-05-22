@@ -2,5 +2,125 @@
 {# @var settings \honchoagency\yesterdaysnews\models\Settings #}
 
 {% import '_includes/forms.twig' as forms %}
+{% from 'yesterdays-news/_macros' import configWarning %}
 
-{# ... #}
+{# ── Beacon ────────────────────────────────────────────────────────── #}
+
+<h2>Beacon</h2>
+
+{{ forms.lightswitchField({
+    label: 'Enable beacon',
+    instructions: 'Inject the JS tracking beacon into frontend pages. Disable to stop recording visits without uninstalling the plugin.',
+    id: 'beaconEnabled',
+    name: 'beaconEnabled',
+    on: settings.beaconEnabled,
+    warning: config.beaconEnabled is defined ? configWarning('beaconEnabled'),
+    errors: settings.getErrors('beaconEnabled'),
+}) }}
+
+<hr>
+
+{# ── Page pruning ──────────────────────────────────────────────────── #}
+
+<h2>Page Pruning</h2>
+
+{{ forms.lightswitchField({
+    label: 'Enable page pruning',
+    instructions: 'Remove pages from the Blitz cache when they have not been visited within the threshold below.',
+    id: 'pagePruningEnabled',
+    name: 'pagePruningEnabled',
+    on: settings.pagePruningEnabled,
+    warning: config.pagePruningEnabled is defined ? configWarning('pagePruningEnabled'),
+    errors: settings.getErrors('pagePruningEnabled'),
+}) }}
+
+{{ forms.selectField({
+    label: 'Page threshold',
+    instructions: 'How long since a page was last visited before it is considered stale.',
+    id: 'threshold',
+    name: 'threshold',
+    value: settings.threshold,
+    options: [
+        { label: '1 hour',   value: 3600 },
+        { label: '6 hours',  value: 21600 },
+        { label: '12 hours', value: 43200 },
+        { label: '24 hours', value: 86400 },
+        { label: '2 days',   value: 172800 },
+        { label: '1 week',   value: 604800 },
+        { label: '30 days',  value: 2592000 },
+    ],
+    warning: config.threshold is defined ? configWarning('threshold'),
+    errors: settings.getErrors('threshold'),
+}) }}
+
+<hr>
+
+{# ── Cached include pruning ────────────────────────────────────────── #}
+
+<h2>Cached Include Pruning</h2>
+
+{{ forms.lightswitchField({
+    label: 'Enable cached include pruning',
+    instructions: 'Remove stale Blitz-cached template includes when their related entry has not been updated recently.',
+    id: 'includePruningEnabled',
+    name: 'includePruningEnabled',
+    on: settings.includePruningEnabled,
+    warning: config.includePruningEnabled is defined ? configWarning('includePruningEnabled'),
+    errors: settings.getErrors('includePruningEnabled'),
+}) }}
+
+{{ forms.selectField({
+    label: 'Entry age threshold',
+    instructions: 'How long since an entry was last updated before its cached includes become eligible for pruning.',
+    id: 'entryAgeThreshold',
+    name: 'entryAgeThreshold',
+    value: settings.entryAgeThreshold,
+    options: [
+        { label: '7 days',   value: 604800 },
+        { label: '14 days',  value: 1209600 },
+        { label: '30 days',  value: 2592000 },
+        { label: '60 days',  value: 5184000 },
+        { label: '90 days',  value: 7776000 },
+        { label: '180 days', value: 15552000 },
+    ],
+    warning: config.entryAgeThreshold is defined ? configWarning('entryAgeThreshold'),
+    errors: settings.getErrors('entryAgeThreshold'),
+}) }}
+
+{{ forms.selectField({
+    label: 'Include cache threshold',
+    instructions: 'How long a cached include must be before it is eligible for pruning, even if its entry is old.',
+    id: 'includeThreshold',
+    name: 'includeThreshold',
+    value: settings.includeThreshold,
+    options: [
+        { label: '1 hour',   value: 3600 },
+        { label: '6 hours',  value: 21600 },
+        { label: '12 hours', value: 43200 },
+        { label: '24 hours', value: 86400 },
+        { label: '2 days',   value: 172800 },
+        { label: '1 week',   value: 604800 },
+    ],
+    warning: config.includeThreshold is defined ? configWarning('includeThreshold'),
+    errors: settings.getErrors('includeThreshold'),
+}) }}
+
+{% set rows = [] %}
+{% for template, paramKey in settings.includeTemplates %}
+    {% set rows = rows|merge([{ template: template, paramKey: paramKey }]) %}
+{% endfor %}
+
+{{ forms.editableTableField({
+    label: 'Include templates',
+    instructions: 'Map each Blitz-cached include template to the param that identifies its related entry. See the documentation for details.',
+    id: 'includeTemplates',
+    name: 'includeTemplates',
+    cols: {
+        template: { heading: 'Template path',  type: 'singleline', placeholder: '_components/article-card' },
+        paramKey: { heading: 'Entry ID param', type: 'singleline', placeholder: 'entryId', thin: true },
+    },
+    rows: rows,
+    warning: config.includeTemplates is defined ? configWarning('includeTemplates'),
+    errors: settings.getErrors('includeTemplates'),
+    addRowLabel: 'Add a template',
+}) }}

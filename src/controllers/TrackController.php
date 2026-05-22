@@ -53,6 +53,10 @@ class TrackController extends Controller
             return $this->asJson(['ok' => false, 'error' => 'Missing url param']);
         }
 
+        if (!YesterdaysNews::blitzIsInstalled()) {
+            return $this->asJson(['ok' => false, 'error' => 'Blitz is not installed']);
+        }
+
         YesterdaysNews::getInstance()->visits->bufferVisit($url);
 
         return $this->asJson(['ok' => true]);

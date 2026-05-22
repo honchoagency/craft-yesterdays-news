@@ -1,0 +1,3 @@
+{% macro configWarning(setting) -%}
+    {{ 'This is being overridden by the `{setting}` config setting.'|t('yesterdays-news', {setting: setting})|markdown(inlineOnly=true) }}
+{%- endmacro %}

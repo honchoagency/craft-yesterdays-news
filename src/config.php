@@ -17,6 +17,10 @@
 return [
     '*' => [
 
+        // Whether the JS beacon should be injected into frontend pages.
+        // Set to false to stop tracking visits without uninstalling the plugin.
+        'beaconEnabled' => true,
+
         // Whether stale page URLs should be pruned from the Blitz cache.
         'pagePruningEnabled' => true,
 
