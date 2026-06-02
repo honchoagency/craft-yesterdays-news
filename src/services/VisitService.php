@@ -3,12 +3,14 @@
 namespace honchoagency\yesterdaysnews\services;
 
 use Craft;
+use craft\db\Query;
 use craft\helpers\Db;
 use honchoagency\yesterdaysnews\records\VisitRecord;
 use honchoagency\yesterdaysnews\YesterdaysNews;
 use putyourlightson\blitz\helpers\SiteUriHelper;
 use putyourlightson\blitz\models\SiteUriModel;
 use yii\base\Component;
+use yii\db\Expression;
 
 /**
  * Visit Service
@@ -58,7 +60,18 @@ class VisitService extends Component
             if (!is_array($pending)) {
                 $pending = [];
             }
-            $pending[$visitKey] = $now;
+
+            // Each buffer entry tracks both the latest timestamp and how many
+            // beacon pings landed between flushes. If the same URL is hit twice
+            // before the next flush we increment the in-memory count so the DB
+            // upsert can add the full batch count in one go.
+            if (isset($pending[$visitKey]) && is_array($pending[$visitKey])) {
+                $pending[$visitKey]['ts'] = $now;
+                $pending[$visitKey]['count']++;
+            } else {
+                $pending[$visitKey] = ['ts' => $now, 'count' => 1];
+            }
+
             Craft::$app->getCache()->set(self::PENDING_CACHE_KEY, $pending, 0);
         } finally {
             $mutex->release(self::FLUSH_MUTEX_KEY);
@@ -92,24 +105,34 @@ class VisitService extends Component
 
             $db = Craft::$app->getDb();
 
-            foreach ($pending as $visitKey => $timestamp) {
+            foreach ($pending as $visitKey => $entry) {
                 // visitKey format: "{siteId}:{uri}"
                 $colonPos = strpos($visitKey, ':');
                 if ($colonPos === false) {
                     continue;
                 }
 
-                $uri = substr($visitKey, $colonPos + 1);
-                $lastVisitedAt = Db::prepareDateForDb(new \DateTime('@' . $timestamp));
+                // Back-compat: buffer entries written by older versions of the plugin
+                // are bare integer timestamps rather than ['ts' => ..., 'count' => ...].
+                if (is_int($entry)) {
+                    $entry = ['ts' => $entry, 'count' => 1];
+                }
+
+                $uri           = substr($visitKey, $colonPos + 1);
+                $lastVisitedAt = Db::prepareDateForDb(new \DateTime('@' . $entry['ts']));
+                $pendingCount  = max(1, (int) ($entry['count'] ?? 1));
 
                 $db->createCommand()->upsert(
                     '{{%yesterdays_news_visits}}',
                     [
                         'url'           => $uri,
                         'lastVisitedAt' => $lastVisitedAt,
+                        'visitCount'    => $pendingCount,
                     ],
                     [
                         'lastVisitedAt' => $lastVisitedAt,
+                        // Accumulate visit count across flushes rather than resetting it.
+                        'visitCount' => new Expression('[[visitCount]] + ' . $pendingCount),
                     ],
                 )->execute();
             }
@@ -154,24 +177,54 @@ class VisitService extends Component
         // Age-based template include pruning runs regardless of the page threshold.
         $this->pruneStaleTemplateIncludes($output);
 
-        $settings  = YesterdaysNews::getInstance()->getSettings();
-        $threshold = $settings->threshold;
-        $log(sprintf("Threshold: %d seconds (%.1f hours).", $threshold, $threshold / 3600));
+        $settings         = YesterdaysNews::getInstance()->getSettings();
+        $threshold        = $settings->threshold;
+        $lowVisitCount    = $settings->lowVisitCount;
+        $lowVisitThreshold = $settings->lowVisitThreshold;
+
+        $log(sprintf(
+            "Thresholds: standard %d seconds (%.1f hours), low-visit (< %d pings) %d seconds (%s).",
+            $threshold,
+            $threshold / 3600,
+            $lowVisitCount,
+            $lowVisitThreshold,
+            $lowVisitThreshold < 3600
+                ? round($lowVisitThreshold / 60) . ' min'
+                : round($lowVisitThreshold / 3600, 1) . ' h',
+        ));
 
         if (!$settings->pagePruningEnabled) {
             $log("Page pruning disabled.");
             return;
         }
 
-        $cutoff = new \DateTime();
-        $cutoff->modify('-' . $threshold . ' seconds');
-        $cutoffDb = Db::prepareDateForDb($cutoff);
-        $log(sprintf("Cutoff: visits older than %s will be removed.", $cutoff->format('Y-m-d H:i:s')));
+        $standardCutoff    = new \DateTime();
+        $standardCutoff->modify('-' . $threshold . ' seconds');
+        $standardCutoffDb  = Db::prepareDateForDb($standardCutoff);
 
-        $staleUris = (new \craft\db\Query())
+        $lowVisitCutoff    = new \DateTime();
+        $lowVisitCutoff->modify('-' . $lowVisitThreshold . ' seconds');
+        $lowVisitCutoffDb  = Db::prepareDateForDb($lowVisitCutoff);
+
+        $log(sprintf(
+            "Standard cutoff: %s | Low-visit cutoff: %s",
+            $standardCutoff->format('Y-m-d H:i:s'),
+            $lowVisitCutoff->format('Y-m-d H:i:s'),
+        ));
+
+        // A row is stale when it falls under its applicable threshold:
+        //  - Low-visit pages (< lowVisitCount pings): use the shorter lowVisitThreshold
+        //  - Standard pages (>= lowVisitCount pings): use the normal threshold
+        $staleCondition = [
+            'or',
+            ['and', ['<', 'visitCount', $lowVisitCount], ['<=', 'lastVisitedAt', $lowVisitCutoffDb]],
+            ['and', ['>=', 'visitCount', $lowVisitCount], ['<=', 'lastVisitedAt', $standardCutoffDb]],
+        ];
+
+        $staleUris = (new Query())
             ->select(['url'])
             ->from('{{%yesterdays_news_visits}}')
-            ->where(['<=', 'lastVisitedAt', $cutoffDb])
+            ->where($staleCondition)
             ->column();
 
         if (empty($staleUris)) {
@@ -216,7 +269,7 @@ class VisitService extends Component
         }
 
         $log(sprintf("Deleting %d row(s) from DB visits table...", count($staleUris)));
-        VisitRecord::deleteAll(['<=', 'lastVisitedAt', $cutoffDb]);
+        VisitRecord::deleteAll($staleCondition);
 
         $log("Prune complete.");
     }
@@ -323,7 +376,7 @@ class VisitService extends Component
         $candidates = [];
 
         foreach ($includeTemplates as $template => $entryIdKey) {
-            $includeRows = (new \craft\db\Query())
+            $includeRows = (new Query())
                 ->select(['index', 'siteId', 'params'])
                 ->from('{{%blitz_includes}}')
                 ->where(['template' => $template])
@@ -356,7 +409,7 @@ class VisitService extends Component
                 $uriToIndex[$uri] = $index;
             }
 
-            $cacheData = (new \craft\db\Query())
+            $cacheData = (new Query())
                 ->select(['uri', 'dateCached'])
                 ->from('{{%blitz_caches}}')
                 ->where(['uri' => array_keys($uriToIndex)])
@@ -364,7 +417,7 @@ class VisitService extends Component
                 ->all();
 
             // Fetch dateUpdated for all related entries in one query.
-            $elementData = (new \craft\db\Query())
+            $elementData = (new Query())
                 ->select(['id', 'dateUpdated'])
                 ->from('{{%elements}}')
                 ->where(['id' => array_values($indexToEntryId)])

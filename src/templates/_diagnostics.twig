@@ -64,6 +64,9 @@
   {# ── Page visits summary ────────────────────────────────────────── #}
   <div class="yn-meta">
     <span><strong>Page threshold:</strong> {{ thresholdHuman }}</span>
+    {% if pagePruningEnabled %}
+      <span><strong>Low-visit threshold:</strong> {{ lowVisitThresholdHuman }} <span class="yn-muted">(< {{ lowVisitCount }} visit{{ lowVisitCount != 1 ? 's' }})</span></span>
+    {% endif %}
     {% if cutoffLocal %}
       <span>
         <strong>Cutoff:</strong>
@@ -90,6 +93,7 @@
             <th>URL</th>
             <th class="yn-nowrap">Last visited <small>UTC</small></th>
             <th class="yn-nowrap">Age</th>
+            <th class="yn-nowrap">Visits</th>
             <th class="yn-nowrap">Action</th>
           </tr>
         </thead>
@@ -106,6 +110,12 @@
               <td><code>{{ row.url }}</code></td>
               <td class="yn-date">{{ row.lastVisitedAt|slice(0, 16) }}</td>
               <td class="yn-nowrap">{{ row.ageHuman }}</td>
+              <td class="yn-nowrap">
+                {{ row.visitCount }}
+                {% if row.isLowVisit %}
+                  <span class="yn-muted" title="Low-visit — using {{ lowVisitThresholdHuman }} threshold">↓</span>
+                {% endif %}
+              </td>
               <td class="yn-nowrap">
                 {% if row.isStale %}
                   <span class="yn-stale">Prune on next run</span>

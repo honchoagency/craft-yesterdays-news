@@ -10,6 +10,7 @@ use craft\db\ActiveRecord;
  * @property int    $id
  * @property string $url
  * @property string $lastVisitedAt
+ * @property int    $visitCount
  * @property string $dateCreated
  * @property string $dateUpdated
  * @property string $uid

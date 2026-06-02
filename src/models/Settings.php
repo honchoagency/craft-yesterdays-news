@@ -34,6 +34,22 @@ class Settings extends Model
     public bool $pagePruningEnabled = true;
 
     /**
+     * Pages with fewer beacon pings than this value use the shorter
+     * $lowVisitThreshold before being pruned. Default: 2.
+     *
+     * Set to 1 to apply the short threshold only to pages that have never had
+     * a beacon ping (e.g. bot-synced pages). Set higher (e.g. 10) to aggressively
+     * prune low-traffic pages.
+     */
+    public int $lowVisitCount = 2;
+
+    /**
+     * Age threshold in seconds for low-visit pages (visitCount < $lowVisitCount).
+     * Default: 1800 (30 minutes).
+     */
+    public int $lowVisitThreshold = 1800;
+
+    /**
      * Age threshold in seconds after which a page URL is considered stale and
      * pruned from the Blitz cache. Default: 86400 (24 hours).
      */
@@ -96,7 +112,7 @@ class Settings extends Model
     {
         return array_merge(parent::defineRules(), [
             [['beaconEnabled', 'pagePruningEnabled', 'includePruningEnabled'], 'boolean'],
-            [['threshold', 'entryAgeThreshold', 'includeThreshold'], 'integer', 'min' => 1],
+            [['lowVisitCount', 'lowVisitThreshold', 'threshold', 'entryAgeThreshold', 'includeThreshold'], 'integer', 'min' => 1],
             [['includeTemplates'], 'safe'],
         ]);
     }

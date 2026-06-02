@@ -34,9 +34,40 @@
     errors: settings.getErrors('pagePruningEnabled'),
 }) }}
 
+{{ forms.textField({
+    label: 'Low-visit count',
+    instructions: 'Pages with fewer visits than this number are treated as low-traffic and pruned on the shorter threshold below. Increase this to prune low-traffic pages more aggressively.',
+    id: 'lowVisitCount',
+    name: 'lowVisitCount',
+    value: settings.lowVisitCount,
+    type: 'number',
+    min: 1,
+    size: 4,
+    warning: config.lowVisitCount is defined ? configWarning('lowVisitCount'),
+    errors: settings.getErrors('lowVisitCount'),
+}) }}
+
+{{ forms.selectField({
+    label: 'Low-visit threshold',
+    instructions: 'How long to keep low-visit pages in the Blitz cache before pruning. Should be much shorter than the page threshold above.',
+    id: 'lowVisitThreshold',
+    name: 'lowVisitThreshold',
+    value: settings.lowVisitThreshold,
+    options: [
+        { label: '15 minutes', value: 900 },
+        { label: '30 minutes', value: 1800 },
+        { label: '1 hour',     value: 3600 },
+        { label: '2 hours',    value: 7200 },
+        { label: '6 hours',    value: 21600 },
+        { label: '12 hours',   value: 43200 },
+    ],
+    warning: config.lowVisitThreshold is defined ? configWarning('lowVisitThreshold'),
+    errors: settings.getErrors('lowVisitThreshold'),
+}) }}
+
 {{ forms.selectField({
     label: 'Page threshold',
-    instructions: 'How long since a page was last visited before it is considered stale.',
+    instructions: 'How long to keep regularly-visited pages in the Blitz cache before pruning.',
     id: 'threshold',
     name: 'threshold',
     value: settings.threshold,

@@ -24,6 +24,16 @@ return [
         // Whether stale page URLs should be pruned from the Blitz cache.
         'pagePruningEnabled' => true,
 
+        // Pages with fewer visits than this number use the shorter
+        // `lowVisitThreshold` below. Bot traffic typically produces 0 or 1
+        // beacon pings (bots don't execute JavaScript), so a value of 2 means
+        // only pages with at least 2 real-user visits use the full threshold.
+        'lowVisitCount' => 2,
+
+        // How long to keep low-visit pages in the Blitz cache. Should be much
+        // shorter than `threshold` — these pages are likely bot-only traffic.
+        'lowVisitThreshold' => 1800, // 30 minutes
+
         // The number of seconds since a page was last visited before it is
         // considered stale and pruned from the Blitz cache.
         'threshold' => 86400, // 24 hours

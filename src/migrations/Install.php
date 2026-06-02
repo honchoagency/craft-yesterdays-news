@@ -16,6 +16,7 @@ class Install extends Migration
             'id'            => $this->primaryKey(),
             'url'           => $this->string(500)->notNull(),
             'lastVisitedAt' => $this->dateTime()->notNull(),
+            'visitCount'    => $this->integer()->unsigned()->notNull()->defaultValue(0),
             'dateCreated'   => $this->dateTime()->notNull(),
             'dateUpdated'   => $this->dateTime()->notNull(),
             'uid'           => $this->uid(),

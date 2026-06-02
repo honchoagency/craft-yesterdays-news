@@ -40,9 +40,11 @@ class Diagnostics extends Utility
     {
         Craft::$app->getView()->registerAssetBundle(CPAsset::class);
 
-        $plugin    = YesterdaysNews::getInstance();
-        $settings  = $plugin->getSettings();
-        $threshold = $settings->threshold;
+        $plugin            = YesterdaysNews::getInstance();
+        $settings          = $plugin->getSettings();
+        $threshold         = $settings->threshold;
+        $lowVisitCount     = $settings->lowVisitCount;
+        $lowVisitThreshold = $settings->lowVisitThreshold;
 
         $cutoff      = null;
         $cutoffLocal = null; // formatted in app timezone
@@ -61,8 +63,14 @@ class Diagnostics extends Utility
             $cutoffTzAbbr = $local->format('T'); // EST, EDT, etc.
         }
 
+        $lowVisitCutoffStr = $settings->pagePruningEnabled
+            ? (new \DateTime('now', new \DateTimeZone('UTC')))
+                ->modify('-' . $lowVisitThreshold . ' seconds')
+                ->format('Y-m-d H:i:s')
+            : null;
+
         $rawRows = (new Query())
-            ->select(['url', 'lastVisitedAt'])
+            ->select(['url', 'lastVisitedAt', 'visitCount'])
             ->from('{{%yesterdays_news_visits}}')
             ->orderBy(['lastVisitedAt' => SORT_ASC])
             ->all();
@@ -74,11 +82,21 @@ class Diagnostics extends Utility
         foreach ($rawRows as $raw) {
             // lastVisitedAt is stored in UTC; parse it explicitly to avoid
             // strtotime() misinterpreting it as the app's local timezone.
-            $lastVisitedTs = (new \DateTime($raw['lastVisitedAt'], new \DateTimeZone('UTC')))->getTimestamp();
-            $ageSeconds    = $now - $lastVisitedTs;
-            $isStale       = $settings->pagePruningEnabled
-                && $cutoff !== null
-                && $raw['lastVisitedAt'] <= $cutoff->format('Y-m-d H:i:s');
+            $lastVisitedTs  = (new \DateTime($raw['lastVisitedAt'], new \DateTimeZone('UTC')))->getTimestamp();
+            $ageSeconds     = $now - $lastVisitedTs;
+            $visitCount     = (int) $raw['visitCount'];
+            $isLowVisit     = $visitCount < $lowVisitCount;
+
+            // Stale threshold depends on whether the page has enough visits to
+            // be treated as real human traffic.
+            $applicableThreshold = $isLowVisit ? $lowVisitThreshold : $threshold;
+            $applicableCutoffStr = $isLowVisit
+                ? $lowVisitCutoffStr
+                : ($cutoff !== null ? $cutoff->format('Y-m-d H:i:s') : null);
+
+            $isStale = $settings->pagePruningEnabled
+                && $applicableCutoffStr !== null
+                && $raw['lastVisitedAt'] <= $applicableCutoffStr;
 
             if ($isStale) {
                 $staleCount++;
@@ -89,9 +107,11 @@ class Diagnostics extends Utility
                 'lastVisitedAt'  => $raw['lastVisitedAt'],
                 'ageSeconds'     => $ageSeconds,
                 'ageHuman'       => self::formatAge($ageSeconds),
+                'visitCount'     => $visitCount,
+                'isLowVisit'     => $isLowVisit,
                 'isStale'        => $isStale,
-                'pruneInSeconds' => (!$isStale && $settings->pagePruningEnabled) ? ($threshold - $ageSeconds) : null,
-                'pruneInHuman'   => (!$isStale && $settings->pagePruningEnabled) ? self::formatAge($threshold - $ageSeconds) : null,
+                'pruneInSeconds' => (!$isStale && $settings->pagePruningEnabled) ? ($applicableThreshold - $ageSeconds) : null,
+                'pruneInHuman'   => (!$isStale && $settings->pagePruningEnabled) ? self::formatAge($applicableThreshold - $ageSeconds) : null,
             ];
         }
 
@@ -153,24 +173,27 @@ class Diagnostics extends Utility
         }
 
         return Craft::$app->getView()->renderTemplate('yesterdays-news/_diagnostics', [
-            'blitzIsInstalled'   => YesterdaysNews::blitzIsInstalled(),
-            'rows'               => $rows,
-            'threshold'          => $threshold,
-            'pagePruningEnabled' => $settings->pagePruningEnabled,
-            'thresholdHuman'     => $settings->pagePruningEnabled ? self::formatAge($threshold) : 'disabled',
-            'cutoffLocal'        => $cutoffLocal,
-            'cutoffUtc'          => $cutoffUtc,
-            'cutoffTzAbbr'       => $cutoffTzAbbr,
-            'appTimezone'        => $appTimezone,
-            'totalCount'         => count($rows),
-            'staleCount'         => $staleCount,
-            'freshCount'         => count($rows) - $staleCount,
-            'pendingCount'       => $plugin->visits->getPendingCount(),
-            'includeRows'        => $includeRows,
-            'includeReadyCount'  => $includeReadyCount,
-            'includeTotalCount'  => count($includeRows),
-            'includeThreshold'   => $includeThreshold,
-            'entryAgeThreshold'  => $entryAgeThreshold,
+            'blitzIsInstalled'      => YesterdaysNews::blitzIsInstalled(),
+            'rows'                  => $rows,
+            'threshold'             => $threshold,
+            'lowVisitCount'         => $lowVisitCount,
+            'lowVisitThreshold'     => $lowVisitThreshold,
+            'lowVisitThresholdHuman' => self::formatAge($lowVisitThreshold),
+            'pagePruningEnabled'    => $settings->pagePruningEnabled,
+            'thresholdHuman'        => $settings->pagePruningEnabled ? self::formatAge($threshold) : 'disabled',
+            'cutoffLocal'           => $cutoffLocal,
+            'cutoffUtc'             => $cutoffUtc,
+            'cutoffTzAbbr'          => $cutoffTzAbbr,
+            'appTimezone'           => $appTimezone,
+            'totalCount'            => count($rows),
+            'staleCount'            => $staleCount,
+            'freshCount'            => count($rows) - $staleCount,
+            'pendingCount'          => $plugin->visits->getPendingCount(),
+            'includeRows'           => $includeRows,
+            'includeReadyCount'     => $includeReadyCount,
+            'includeTotalCount'     => count($includeRows),
+            'includeThreshold'      => $includeThreshold,
+            'entryAgeThreshold'     => $entryAgeThreshold,
         ], View::TEMPLATE_MODE_CP);
     }
 
