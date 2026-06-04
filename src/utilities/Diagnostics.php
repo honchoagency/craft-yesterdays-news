@@ -46,21 +46,11 @@ class Diagnostics extends Utility
         $lowVisitCount     = $settings->lowVisitCount;
         $lowVisitThreshold = $settings->lowVisitThreshold;
 
-        $cutoff      = null;
-        $cutoffLocal = null; // formatted in app timezone
-        $cutoffUtc   = null; // formatted in UTC
-        $cutoffTzAbbr = null; // e.g. 'EST'
-        $appTimezone = Craft::$app->getTimeZone();
+        $cutoff = null;
 
         if ($settings->pagePruningEnabled) {
             $cutoff = new \DateTime('now', new \DateTimeZone('UTC'));
             $cutoff->modify('-' . $threshold . ' seconds');
-            $cutoffUtc = $cutoff->format('Y-m-d H:i');
-
-            $local = clone $cutoff;
-            $local->setTimezone(new \DateTimeZone($appTimezone));
-            $cutoffLocal  = $local->format('Y-m-d H:i');
-            $cutoffTzAbbr = $local->format('T'); // EST, EDT, etc.
         }
 
         $lowVisitCutoffStr = $settings->pagePruningEnabled
@@ -181,10 +171,6 @@ class Diagnostics extends Utility
             'lowVisitThresholdHuman' => self::formatAge($lowVisitThreshold),
             'pagePruningEnabled'    => $settings->pagePruningEnabled,
             'thresholdHuman'        => $settings->pagePruningEnabled ? self::formatAge($threshold) : 'disabled',
-            'cutoffLocal'           => $cutoffLocal,
-            'cutoffUtc'             => $cutoffUtc,
-            'cutoffTzAbbr'          => $cutoffTzAbbr,
-            'appTimezone'           => $appTimezone,
             'totalCount'            => count($rows),
             'staleCount'            => $staleCount,
             'freshCount'            => count($rows) - $staleCount,

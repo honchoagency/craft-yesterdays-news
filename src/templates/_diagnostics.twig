@@ -62,23 +62,60 @@
   </div>
 
   {# ── Page visits summary ────────────────────────────────────────── #}
+  {% set lowVisitPageCount  = rows|filter(r => r.isLowVisit)|length %}
+  {% set normalVisitPageCount = totalCount - lowVisitPageCount %}
+
   <div class="yn-meta">
-    <span><strong>Page threshold:</strong> {{ thresholdHuman }}</span>
-    {% if pagePruningEnabled %}
-      <span><strong>Low-visit threshold:</strong> {{ lowVisitThresholdHuman }} <span class="yn-muted">(< {{ lowVisitCount }} visit{{ lowVisitCount != 1 ? 's' }})</span></span>
-    {% endif %}
-    {% if cutoffLocal %}
+
+    {# Settings #}
+    <div class="yn-meta__group">
+      <span class="yn-meta__label">Settings</span>
+
       <span>
-        <strong>Cutoff:</strong>
-        {{ cutoffLocal }} {{ cutoffTzAbbr }}{% if appTimezone != 'UTC' %} <small class="yn-muted">[{{ cutoffUtc }} UTC]</small>{% endif %}
+        Page threshold: <strong>{{ thresholdHuman }}</strong>
+        <span class="info">Pages that have been visited <strong>{{ lowVisitCount }} or more times</strong> and haven't been visited in the last <strong>{{ thresholdHuman }}</strong> will be marked as stale and removed from the Blitz cache on the next prune run.</span>
       </span>
-    {% endif %}
-    <span><strong>Tracked:</strong> {{ totalCount }}</span>
-    <span class="yn-stale"><strong>Stale:</strong> {{ staleCount }}</span>
-    <span class="yn-fresh"><strong>Fresh:</strong> {{ freshCount }}</span>
-    {% if pendingCount > 0 %}
-      <span class="yn-buffered"><strong>Buffered:</strong> {{ pendingCount }}</span>
-    {% endif %}
+
+      {% if pagePruningEnabled %}
+        <span>
+          Low-visit threshold: <strong>{{ lowVisitThresholdHuman }}</strong> <span class="yn-muted">(< {{ lowVisitCount }} visit{{ lowVisitCount != 1 ? 's' }})</span>
+          <span class="info">Pages visited fewer than <strong>{{ lowVisitCount }} time{{ lowVisitCount != 1 ? 's' }}</strong> that haven't been visited in the last <strong>{{ lowVisitThresholdHuman }}</strong> will be marked as stale. This catches bot-crawled pages that never generate real beacon pings.</span>
+        </span>
+      {% endif %}
+
+
+    </div>
+
+    {# Stats #}
+    <div class="yn-meta__group">
+      <span class="yn-meta__label">Stats</span>
+
+      <span><strong>{{ totalCount }}</strong> tracked</span>
+
+      {% if totalCount > 0 %}
+        <span class="yn-stale">
+          <strong>{{ staleCount }}</strong> stale
+          <span class="yn-muted">({{ ((staleCount / totalCount) * 100)|round }}%)</span>
+        </span>
+        <span class="yn-fresh">
+          <strong>{{ freshCount }}</strong> fresh
+          <span class="yn-muted">({{ ((freshCount / totalCount) * 100)|round }}%)</span>
+        </span>
+        <span>
+          <strong>{{ lowVisitPageCount }}</strong> low-visit
+          <span class="yn-muted">({{ ((lowVisitPageCount / totalCount) * 100)|round }}%)</span>
+        </span>
+        <span>
+          <strong>{{ normalVisitPageCount }}</strong> normal-visit
+          <span class="yn-muted">({{ ((normalVisitPageCount / totalCount) * 100)|round }}%)</span>
+        </span>
+      {% endif %}
+
+      {% if pendingCount > 0 %}
+        <span class="yn-buffered"><strong>{{ pendingCount }}</strong> buffered</span>
+      {% endif %}
+    </div>
+
   </div>
 
   {# ── Page visits table ─────────────────────────────────────────── #}

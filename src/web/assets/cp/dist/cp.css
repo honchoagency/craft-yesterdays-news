@@ -34,13 +34,34 @@
 
 .yn-diagnostics .yn-meta {
     display: flex;
-    gap: 2rem;
+    gap: 1.5rem;
     flex-wrap: wrap;
     margin-bottom: 1.5rem;
     padding: 1rem 1.25rem;
     background: var(--gray-050, #f3f3f3);
     border-radius: var(--medium-border-radius, 5px);
     font-size: 0.875rem;
+    align-items: flex-start;
+}
+
+.yn-diagnostics .yn-meta__group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.yn-diagnostics .yn-meta__group + .yn-meta__group {
+    padding-inline-start: 1.5rem;
+    border-inline-start: 1px solid var(--hairline-color, #e3e3e3);
+}
+
+.yn-diagnostics .yn-meta__label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--medium-text-color);
+    margin-bottom: 0.15rem;
 }
 
 /* Semantic text colours */
