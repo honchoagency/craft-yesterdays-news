@@ -12,7 +12,7 @@
 #}
 <script>
 navigator.sendBeacon(
-  '/{{ actionTrigger }}/yesterdays-news/track',
+  '/{{ actionTrigger|e('js') }}/yesterdays-news/track',
   new Blob([JSON.stringify({ url: window.location.pathname })], { type: 'application/json' })
 );
 </script>
