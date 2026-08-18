@@ -122,7 +122,7 @@ class YesterdaysNews extends Plugin
 
                 echo Craft::$app->getView()->renderTemplate(
                     'yesterdays-news/_beacon',
-                    [],
+                    ['actionTrigger' => Craft::$app->getConfig()->getGeneral()->actionTrigger],
                     View::TEMPLATE_MODE_SITE,
                 );
             }
