@@ -118,14 +118,18 @@ class VisitService extends Component
                     $entry = ['ts' => $entry, 'count' => 1];
                 }
 
+                $siteId        = (int) substr($visitKey, 0, $colonPos);
                 $uri           = substr($visitKey, $colonPos + 1);
+                // Store an absolute URL so the site survives into the visits
+                // table; a bare path cannot be resolved back to its site.
+                $url           = $this->absoluteUrl($siteId, $uri) ?? $uri;
                 $lastVisitedAt = Db::prepareDateForDb(new \DateTime('@' . $entry['ts']));
                 $pendingCount  = max(1, (int) ($entry['count'] ?? 1));
 
                 $db->createCommand()->upsert(
                     '{{%yesterdays_news_visits}}',
                     [
-                        'url'           => $uri,
+                        'url'           => $url,
                         'lastVisitedAt' => $lastVisitedAt,
                         'visitCount'    => $pendingCount,
                     ],
@@ -233,17 +237,20 @@ class VisitService extends Component
         }
 
         $log(sprintf("Found %d stale URL(s):", count($staleUris)));
-        foreach ($staleUris as $uri) {
-            $log("  - /$uri");
+        foreach ($staleUris as $url) {
+            $log('  - ' . (str_contains($url, '://') ? $url : '/' . ltrim($url, '/')));
         }
 
-        // Build absolute URLs — Blitz's getSiteUriFromUrl() needs them to match
-        // against site base URLs and strip the base path correctly.
-        $primarySite = Craft::$app->getSites()->getPrimarySite();
-        $baseUrl = rtrim($primarySite->getBaseUrl(), '/');
+        // Rows written by this version already hold an absolute URL, so they can
+        // be resolved to their own site. Rows written by earlier versions hold a
+        // bare path; those can only be guessed at, so they keep the previous
+        // primary-site behaviour and age out naturally.
+        $primaryBaseUrl = rtrim(Craft::$app->getSites()->getPrimarySite()->getBaseUrl(), '/');
 
         $absoluteUrls = array_map(
-            fn(string $uri): string => $baseUrl . '/' . ltrim($uri, '/'),
+            fn(string $url): string => str_contains($url, '://')
+                ? $url
+                : $primaryBaseUrl . '/' . ltrim($url, '/'),
             $staleUris,
         );
 
@@ -265,7 +272,18 @@ class VisitService extends Component
             $log(sprintf("Purging reverse proxy cache for %d URI(s)...", count($siteUris)));
             $blitz->cachePurger->purgeUris($siteUris);
         } else {
-            $log("No matching Blitz cache URIs found (URLs may not be cached).");
+            // Keep the rows. Deleting them here would erase the only evidence
+            // that pruning is not working, and the next run would report
+            // "0 stale" while the Blitz cache keeps growing.
+            $log(
+                sprintf(
+                    "No matching Blitz cache URIs found for %d stale URL(s) — keeping the rows so the mismatch stays visible.",
+                    count($staleUris),
+                ),
+                true,
+            );
+            $log("Prune complete.");
+            return;
         }
 
         $log(sprintf("Deleting %d row(s) from DB visits table...", count($staleUris)));
@@ -518,21 +536,28 @@ class VisitService extends Component
         $inserted = 0;
 
         foreach (\putyourlightson\blitz\records\CacheRecord::find()
-            ->select(['uri', 'dateCached'])
+            ->select(['siteId', 'uri', 'dateCached'])
             ->where(['IS NOT', 'dateCached', null])
             ->asArray()
             ->batch(500) as $batch) {
             foreach ($batch as $row) {
-                if (isset($trackedUrls[$row['uri']]) || str_starts_with($row['uri'], '_cached_include_')) {
+                if (str_starts_with($row['uri'], '_cached_include_')) {
+                    continue;
+                }
+
+                // Keep the site: the same URI can be cached on several sites.
+                $url = $this->absoluteUrl((int) $row['siteId'], $row['uri']);
+
+                if ($url === null || isset($trackedUrls[$url])) {
                     continue;
                 }
 
                 $db->createCommand()->upsert('{{%yesterdays_news_visits}}', [
-                    'url'           => $row['uri'],
+                    'url'           => $url,
                     'lastVisitedAt' => $row['dateCached'],
                 ], false)->execute();
 
-                $trackedUrls[$row['uri']] = true;
+                $trackedUrls[$url] = true;
                 $inserted++;
             }
         }
@@ -545,6 +570,22 @@ class VisitService extends Component
         $log(sprintf('Sync complete: %d row(s) inserted.', $inserted));
 
         return $inserted;
+    }
+
+    /**
+     * Build an absolute URL for a site + URI pair, or null if the site is gone.
+     */
+    private function absoluteUrl(int $siteId, string $uri): ?string
+    {
+        $site = Craft::$app->getSites()->getSiteById($siteId);
+
+        if ($site === null) {
+            return null;
+        }
+
+        $url = rtrim($site->getBaseUrl(), '/') . '/' . ltrim($uri, '/');
+
+        return strlen($url) > 500 ? null : $url;
     }
 
     /**
@@ -564,8 +605,11 @@ class VisitService extends Component
             return null;
         }
 
-        $primarySite = Craft::$app->getSites()->getPrimarySite();
-        $baseUrl = rtrim($primarySite->getBaseUrl(), '/');
+        // Resolve against the site the beacon actually fired from, not the
+        // primary site. On installs where each site has its own domain, using
+        // the primary site here assigns every visit to the wrong site.
+        $site = Craft::$app->getSites()->getCurrentSite();
+        $baseUrl = rtrim($site->getBaseUrl(), '/');
         $absoluteUrl = $baseUrl . '/' . ltrim($path, '/');
 
         return SiteUriHelper::getSiteUriFromUrl($absoluteUrl);
