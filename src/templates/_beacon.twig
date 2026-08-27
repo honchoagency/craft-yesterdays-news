@@ -11,24 +11,8 @@
   and baked as a literal string into the cached static HTML.
 #}
 <script>
-(function () {
-  'use strict';
-
-  var actionTrigger = '{{ craft.app.config.general.actionTrigger | e('js') }}';
-
-  function sendBeacon() {
-    try {
-      fetch('/' + actionTrigger + '/yesterdays-news/track', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: window.location.pathname }),
-        keepalive: true
-      });
-    } catch (e) {
-      // Silently ignore — tracking is best-effort and must never break the page.
-    }
-  }
-
-  sendBeacon();
-})();
+navigator.sendBeacon(
+  '/{{ actionTrigger|e('js') }}/yesterdays-news/track',
+  new Blob([JSON.stringify({ url: window.location.pathname })], { type: 'application/json' })
+);
 </script>
