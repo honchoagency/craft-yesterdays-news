@@ -30,6 +30,12 @@
     margin-left: 0.35rem;
 }
 
+/* Site switcher */
+
+.yn-diagnostics .yn-sitemenu {
+    margin-bottom: 1.5rem;
+}
+
 /* Summary bar */
 
 .yn-diagnostics .yn-meta {

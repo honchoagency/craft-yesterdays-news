@@ -118,6 +118,7 @@ class VisitService extends Component
                     $entry = ['ts' => $entry, 'count' => 1];
                 }
 
+                $siteId        = (int) substr($visitKey, 0, $colonPos);
                 $uri           = substr($visitKey, $colonPos + 1);
                 $lastVisitedAt = Db::prepareDateForDb(new \DateTime('@' . $entry['ts']));
                 $pendingCount  = max(1, (int) ($entry['count'] ?? 1));
@@ -125,6 +126,7 @@ class VisitService extends Component
                 $db->createCommand()->upsert(
                     '{{%yesterdays_news_visits}}',
                     [
+                        'siteId'        => $siteId,
                         'url'           => $uri,
                         'lastVisitedAt' => $lastVisitedAt,
                         'visitCount'    => $pendingCount,
@@ -221,54 +223,45 @@ class VisitService extends Component
             ['and', ['>=', 'visitCount', $lowVisitCount], ['<=', 'lastVisitedAt', $standardCutoffDb]],
         ];
 
-        $staleUris = (new Query())
-            ->select(['url'])
+        $staleRows = (new Query())
+            ->select(['siteId', 'url'])
             ->from('{{%yesterdays_news_visits}}')
             ->where($staleCondition)
-            ->column();
+            ->all();
 
-        if (empty($staleUris)) {
+        if (empty($staleRows)) {
             $log("No stale URLs found.");
             return;
         }
 
-        $log(sprintf("Found %d stale URL(s):", count($staleUris)));
-        foreach ($staleUris as $uri) {
-            $log("  - /$uri");
+        $log(sprintf("Found %d stale URL(s):", count($staleRows)));
+        foreach ($staleRows as $row) {
+            $log("  - site {$row['siteId']}: /{$row['url']}");
         }
 
-        // Build absolute URLs — Blitz's getSiteUriFromUrl() needs them to match
-        // against site base URLs and strip the base path correctly.
-        $primarySite = Craft::$app->getSites()->getPrimarySite();
-        $baseUrl = rtrim($primarySite->getBaseUrl(), '/');
-
-        $absoluteUrls = array_map(
-            fn(string $uri): string => $baseUrl . '/' . ltrim($uri, '/'),
-            $staleUris,
+        // Built directly from the stored siteId — no more guessing which site
+        // a bare path belongs to.
+        $siteUris = array_map(
+            fn(array $row): SiteUriModel => new SiteUriModel(['siteId' => (int) $row['siteId'], 'uri' => $row['url']]),
+            $staleRows,
         );
 
-        $siteUris = SiteUriHelper::getSiteUrisFromUrls($absoluteUrls);
+        /** @var \putyourlightson\blitz\Blitz $blitz */
+        $blitz = Craft::$app->getPlugins()->getPlugin('blitz');
 
-        if (!empty($siteUris)) {
-            /** @var \putyourlightson\blitz\Blitz $blitz */
-            $blitz = Craft::$app->getPlugins()->getPlugin('blitz');
+        // clear pages from Blitz static cache
+        $log(sprintf("Clearing Blitz static cache for %d URI(s)...", count($siteUris)));
+        $blitz->clearCache->clearUris($siteUris);
 
-            // clear pages from Blitz static cache
-            $log(sprintf("Clearing Blitz static cache for %d URI(s)...", count($siteUris)));
-            $blitz->clearCache->clearUris($siteUris);
+        // flush pages from Blitz database
+        $log(sprintf("Flushing Blitz DB cache records for %d URI(s)...", count($siteUris)));
+        $blitz->flushCache->flushUris($siteUris);
 
-            // flush pages from Blitz database
-            $log(sprintf("Flushing Blitz DB cache records for %d URI(s)...", count($siteUris)));
-            $blitz->flushCache->flushUris($siteUris);
+        // purge pages from reverse proxy caches
+        $log(sprintf("Purging reverse proxy cache for %d URI(s)...", count($siteUris)));
+        $blitz->cachePurger->purgeUris($siteUris);
 
-            // purge pages from reverse proxy caches
-            $log(sprintf("Purging reverse proxy cache for %d URI(s)...", count($siteUris)));
-            $blitz->cachePurger->purgeUris($siteUris);
-        } else {
-            $log("No matching Blitz cache URIs found (URLs may not be cached).");
-        }
-
-        $log(sprintf("Deleting %d row(s) from DB visits table...", count($staleUris)));
+        $log(sprintf("Deleting %d row(s) from DB visits table...", count($staleRows)));
         VisitRecord::deleteAll($staleCondition);
 
         $log("Prune complete.");
@@ -361,7 +354,7 @@ class VisitService extends Component
      * @return array<int, array{template: string, index: string, siteId: int, uri: string, entryId: int, dateUpdated: ?string, dateCached: string}>
      * @throws \yii\db\Exception
      */
-    public function getIncludeCandidates(): array
+    public function getIncludeCandidates(?int $siteId = null): array
     {
         if (!YesterdaysNews::blitzIsInstalled()) {
             return [];
@@ -376,11 +369,16 @@ class VisitService extends Component
         $candidates = [];
 
         foreach ($includeTemplates as $template => $entryIdKey) {
-            $includeRows = (new Query())
+            $includeQuery = (new Query())
                 ->select(['index', 'siteId', 'params'])
                 ->from('{{%blitz_includes}}')
-                ->where(['template' => $template])
-                ->all();
+                ->where(['template' => $template]);
+
+            if ($siteId !== null) {
+                $includeQuery->andWhere(['siteId' => $siteId]);
+            }
+
+            $includeRows = $includeQuery->all();
 
             if (empty($includeRows)) {
                 continue;
@@ -450,11 +448,28 @@ class VisitService extends Component
 
     /**
      * Return the number of visits currently buffered in the Craft cache awaiting flush.
+     *
+     * Buffer keys are "{siteId}:{uri}" — pass $siteId to count only that site's
+     * pending visits, or omit it for the total across all sites.
      */
-    public function getPendingCount(): int
+    public function getPendingCount(?int $siteId = null): int
     {
         $pending = Craft::$app->getCache()->get(self::PENDING_CACHE_KEY);
-        return is_array($pending) ? count($pending) : 0;
+
+        if (!is_array($pending)) {
+            return 0;
+        }
+
+        if ($siteId === null) {
+            return count($pending);
+        }
+
+        $prefix = $siteId . ':';
+
+        return count(array_filter(
+            array_keys($pending),
+            fn(string $key): bool => str_starts_with($key, $prefix),
+        ));
     }
 
     /**
@@ -501,12 +516,13 @@ class VisitService extends Component
             return 0;
         }
 
-        // Build a lookup set of already-tracked URIs in batches to avoid loading
-        // the whole table into memory at once.
+        // Build a lookup set of already-tracked site+URI pairs in batches to
+        // avoid loading the whole table into memory at once. The same URI can
+        // be cached on several sites, so the key must include the site.
         $trackedUrls = [];
-        foreach (VisitRecord::find()->select('url')->asArray()->batch(500) as $batch) {
+        foreach (VisitRecord::find()->select(['siteId', 'url'])->asArray()->batch(500) as $batch) {
             foreach ($batch as $row) {
-                $trackedUrls[$row['url']] = true;
+                $trackedUrls[$row['siteId'] . ':' . $row['url']] = true;
             }
         }
 
@@ -518,21 +534,28 @@ class VisitService extends Component
         $inserted = 0;
 
         foreach (\putyourlightson\blitz\records\CacheRecord::find()
-            ->select(['uri', 'dateCached'])
+            ->select(['siteId', 'uri', 'dateCached'])
             ->where(['IS NOT', 'dateCached', null])
             ->asArray()
             ->batch(500) as $batch) {
             foreach ($batch as $row) {
-                if (isset($trackedUrls[$row['uri']]) || str_starts_with($row['uri'], '_cached_include_')) {
+                if (str_starts_with($row['uri'], '_cached_include_')) {
+                    continue;
+                }
+
+                $key = $row['siteId'] . ':' . $row['uri'];
+
+                if (isset($trackedUrls[$key])) {
                     continue;
                 }
 
                 $db->createCommand()->upsert('{{%yesterdays_news_visits}}', [
+                    'siteId'        => (int) $row['siteId'],
                     'url'           => $row['uri'],
                     'lastVisitedAt' => $row['dateCached'],
                 ], false)->execute();
 
-                $trackedUrls[$row['uri']] = true;
+                $trackedUrls[$key] = true;
                 $inserted++;
             }
         }
@@ -564,8 +587,11 @@ class VisitService extends Component
             return null;
         }
 
-        $primarySite = Craft::$app->getSites()->getPrimarySite();
-        $baseUrl = rtrim($primarySite->getBaseUrl(), '/');
+        // Resolve against the site the beacon actually fired from, not the
+        // primary site. On installs where each site has its own domain, using
+        // the primary site here assigns every visit to the wrong site.
+        $site = Craft::$app->getSites()->getCurrentSite();
+        $baseUrl = rtrim($site->getBaseUrl(), '/');
         $absoluteUrl = $baseUrl . '/' . ltrim($path, '/');
 
         return SiteUriHelper::getSiteUriFromUrl($absoluteUrl);
