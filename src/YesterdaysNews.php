@@ -26,7 +26,7 @@ use yii\base\Event;
  */
 class YesterdaysNews extends Plugin
 {
-    public string $schemaVersion = '1.1.0';
+    public string $schemaVersion = '1.2.0';
     public bool $hasCpSettings = true;
 
     public static function blitzIsInstalled(): bool

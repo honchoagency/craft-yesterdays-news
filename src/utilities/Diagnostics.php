@@ -5,6 +5,7 @@ namespace honchoagency\yesterdaysnews\utilities;
 use Craft;
 use craft\base\Utility;
 use craft\db\Query;
+use craft\models\Site;
 use craft\web\View;
 use honchoagency\yesterdaysnews\web\assets\cp\CPAsset;
 use honchoagency\yesterdaysnews\YesterdaysNews;
@@ -40,6 +41,8 @@ class Diagnostics extends Utility
     {
         Craft::$app->getView()->registerAssetBundle(CPAsset::class);
 
+        $site = self::requestedSite();
+
         $plugin            = YesterdaysNews::getInstance();
         $settings          = $plugin->getSettings();
         $threshold         = $settings->threshold;
@@ -62,6 +65,7 @@ class Diagnostics extends Utility
         $rawRows = (new Query())
             ->select(['url', 'lastVisitedAt', 'visitCount'])
             ->from('{{%yesterdays_news_visits}}')
+            ->where(['siteId' => $site->id])
             ->orderBy(['lastVisitedAt' => SORT_ASC])
             ->all();
 
@@ -105,12 +109,29 @@ class Diagnostics extends Utility
             ];
         }
 
+        // Prune/flush/sync/clear all operate across every site, not just the
+        // one selected in the switcher — count stale rows across the whole
+        // table so the button labels reflect what a click will actually do.
+        $globalStaleCount = 0;
+
+        if ($settings->pagePruningEnabled) {
+            $globalStaleCount = (int) (new Query())
+                ->from('{{%yesterdays_news_visits}}')
+                ->where([
+                    'or',
+                    ['and', ['<', 'visitCount', $lowVisitCount], ['<=', 'lastVisitedAt', $lowVisitCutoffStr]],
+                    ['and', ['>=', 'visitCount', $lowVisitCount], ['<=', 'lastVisitedAt', $cutoff->format('Y-m-d H:i:s')]],
+                ])
+                ->count();
+        }
+
         // --- Cached include candidates ---
         $includeThreshold  = $settings->includeThreshold;
         $entryAgeThreshold = $settings->entryAgeThreshold;
 
         $includeRows       = [];
         $includeReadyCount = 0;
+        $globalIncludeReadyCount = 0;
 
         if ($settings->includePruningEnabled && !empty($settings->includeTemplates)) {
             $includeCutoffStr = (new \DateTime('now', new \DateTimeZone('UTC')))
@@ -120,7 +141,19 @@ class Diagnostics extends Utility
                 ->modify('-' . $entryAgeThreshold . ' seconds')
                 ->format('Y-m-d H:i:s');
 
+            // Prune is global — count ready-to-prune includes across every
+            // site for the button label, separately from the site-filtered
+            // rows built below for the table.
             foreach ($plugin->visits->getIncludeCandidates() as $candidate) {
+                $isEntryOld = $candidate['dateUpdated'] !== null && $candidate['dateUpdated'] <= $entryCutoffStr;
+                $isCacheOld = $candidate['dateCached'] <= $includeCutoffStr;
+
+                if ($isEntryOld && $isCacheOld) {
+                    $globalIncludeReadyCount++;
+                }
+            }
+
+            foreach ($plugin->visits->getIncludeCandidates($site->id) as $candidate) {
                 $dateUpdated     = $candidate['dateUpdated'];
                 $dateCached      = $candidate['dateCached'];
                 $entryAgeSeconds = $dateUpdated !== null
@@ -164,6 +197,8 @@ class Diagnostics extends Utility
 
         return Craft::$app->getView()->renderTemplate('yesterdays-news/_diagnostics', [
             'blitzIsInstalled'      => YesterdaysNews::blitzIsInstalled(),
+            'site'                  => $site,
+            'siteId'                => $site->id,
             'rows'                  => $rows,
             'threshold'             => $threshold,
             'lowVisitCount'         => $lowVisitCount,
@@ -174,13 +209,30 @@ class Diagnostics extends Utility
             'totalCount'            => count($rows),
             'staleCount'            => $staleCount,
             'freshCount'            => count($rows) - $staleCount,
-            'pendingCount'          => $plugin->visits->getPendingCount(),
+            'pendingCount'          => $plugin->visits->getPendingCount($site->id),
             'includeRows'           => $includeRows,
             'includeReadyCount'     => $includeReadyCount,
             'includeTotalCount'     => count($includeRows),
             'includeThreshold'      => $includeThreshold,
             'entryAgeThreshold'     => $entryAgeThreshold,
+            // Global (all-sites) counts for the system-wide action buttons.
+            'globalStaleCount'        => $globalStaleCount,
+            'globalIncludeReadyCount' => $globalIncludeReadyCount,
+            'globalPendingCount'      => $plugin->visits->getPendingCount(),
         ], View::TEMPLATE_MODE_CP);
+    }
+
+    /**
+     * Resolve the site to scope the diagnostics report to, from the CP's
+     * native site switcher — a ?site={handle} query param — falling back to
+     * the current site, same as Blitz's own DiagnosticsUtility.
+     */
+    private static function requestedSite(): Site
+    {
+        $siteHandle = Craft::$app->getRequest()->getParam('site');
+        $site = is_string($siteHandle) ? Craft::$app->getSites()->getSiteByHandle($siteHandle) : null;
+
+        return $site ?? Craft::$app->getSites()->getCurrentSite();
     }
 
     private static function formatAge(int $seconds): string

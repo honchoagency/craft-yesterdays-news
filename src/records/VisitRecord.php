@@ -8,6 +8,7 @@ use craft\db\ActiveRecord;
  * Visit record for the yesterdays_news_visits table.
  *
  * @property int    $id
+ * @property int    $siteId
  * @property string $url
  * @property string $lastVisitedAt
  * @property int    $visitCount
