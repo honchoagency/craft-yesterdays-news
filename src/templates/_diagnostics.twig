@@ -16,7 +16,8 @@
     </div>
   {% endif %}
 
-  {# ── Action buttons ────────────────────────────────────────────── #}
+  {# ── Action buttons — these operate across every site, not just the one
+       selected below, so they sit above the site switcher ─────────── #}
   <div class="yn-actions">
 
     <form method="post">
@@ -24,7 +25,7 @@
       {{ actionInput('yesterdays-news/cp/flush') }}
       {{ redirectInput(craft.app.request.url) }}
       <button type="submit" class="btn{{ not blitzIsInstalled ? ' disabled' }}"{% if not blitzIsInstalled %} disabled{% endif %}>
-        Flush buffer to DB{% if pendingCount > 0 %} <span class="badge">{{ pendingCount }}</span>{% endif %}
+        Flush buffer to DB{% if globalPendingCount > 0 %} <span class="badge">{{ globalPendingCount }}</span>{% endif %}
       </button>
     </form>
 
@@ -32,13 +33,13 @@
       {{ csrfInput() }}
       {{ actionInput('yesterdays-news/cp/prune') }}
       {{ redirectInput(craft.app.request.url) }}
-      {% set pruneDisabled = not blitzIsInstalled or (staleCount == 0 and includeReadyCount == 0) %}
+      {% set pruneDisabled = not blitzIsInstalled or (globalStaleCount == 0 and globalIncludeReadyCount == 0) %}
       <button type="submit" class="btn submit{{ pruneDisabled ? ' disabled' }}"{% if pruneDisabled %} disabled{% endif %}>
         Prune
-        {% if staleCount > 0 %}{{ staleCount }} stale URL{{ staleCount != 1 ? 's' }}{% endif %}
-        {% if staleCount > 0 and includeReadyCount > 0 %} + {% endif %}
-        {% if includeReadyCount > 0 %}{{ includeReadyCount }} stale include{{ includeReadyCount != 1 ? 's' }}{% endif %}
-        {% if staleCount == 0 and includeReadyCount == 0 %}0 stale{% endif %}
+        {% if globalStaleCount > 0 %}{{ globalStaleCount }} stale URL{{ globalStaleCount != 1 ? 's' }}{% endif %}
+        {% if globalStaleCount > 0 and globalIncludeReadyCount > 0 %} + {% endif %}
+        {% if globalIncludeReadyCount > 0 %}{{ globalIncludeReadyCount }} stale include{{ globalIncludeReadyCount != 1 ? 's' }}{% endif %}
+        {% if globalStaleCount == 0 and globalIncludeReadyCount == 0 %}0 stale{% endif %}
       </button>
     </form>
 
@@ -61,13 +62,8 @@
 
   </div>
 
-  {# ── Page visits summary ────────────────────────────────────────── #}
-  {% set lowVisitPageCount  = rows|filter(r => r.isLowVisit)|length %}
-  {% set normalVisitPageCount = totalCount - lowVisitPageCount %}
-
+  {# ── Settings — plugin-wide config, not scoped to a site ─────────── #}
   <div class="yn-meta">
-
-    {# Settings #}
     <div class="yn-meta__group">
       <span class="yn-meta__label">Settings</span>
 
@@ -82,11 +78,25 @@
           <span class="info">Pages visited fewer than <strong>{{ lowVisitCount }} time{{ lowVisitCount != 1 ? 's' }}</strong> that haven't been visited in the last <strong>{{ lowVisitThresholdHuman }}</strong> will be marked as stale. This catches bot-crawled pages that never generate real beacon pings.</span>
         </span>
       {% endif %}
-
-
     </div>
+  </div>
 
-    {# Stats #}
+  <hr class="yn-divider">
+
+  {# ── Site switcher — native Craft dropdown, same as Blitz's own diagnostics
+       utility. Scopes everything below (the report), not the actions above ── #}
+  <div class="yn-sitemenu">
+    {% include '_elements/sitemenu' with {
+      selectedSiteId: siteId,
+      urlFormat: 'utilities/yesterdays-news-diagnostics?site={handle}',
+    } only %}
+  </div>
+
+  {# ── Page visits summary — scoped to the selected site ───────────── #}
+  {% set lowVisitPageCount  = rows|filter(r => r.isLowVisit)|length %}
+  {% set normalVisitPageCount = totalCount - lowVisitPageCount %}
+
+  <div class="yn-meta">
     <div class="yn-meta__group">
       <span class="yn-meta__label">Stats</span>
 
@@ -115,7 +125,6 @@
         <span class="yn-buffered"><strong>{{ pendingCount }}</strong> buffered</span>
       {% endif %}
     </div>
-
   </div>
 
   {# ── Page visits table ─────────────────────────────────────────── #}
