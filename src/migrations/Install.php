@@ -14,6 +14,7 @@ class Install extends Migration
     {
         $this->createTable('{{%yesterdays_news_visits}}', [
             'id'            => $this->primaryKey(),
+            'siteId'        => $this->integer()->notNull(),
             'url'           => $this->string(500)->notNull(),
             'lastVisitedAt' => $this->dateTime()->notNull(),
             'visitCount'    => $this->integer()->unsigned()->notNull()->defaultValue(0),
@@ -22,9 +23,19 @@ class Install extends Migration
             'uid'           => $this->uid(),
         ]);
 
-        // Unique index on url — required for upsert ON DUPLICATE KEY UPDATE.
+        $this->addForeignKey(
+            null,
+            '{{%yesterdays_news_visits}}',
+            ['siteId'],
+            '{{%sites}}',
+            ['id'],
+            'CASCADE',
+            null,
+        );
+
+        // Unique index on [siteId, url] — the same path can exist once per site.
         // string(500) keeps the index within MySQL's 767-byte utf8mb4 key limit.
-        $this->createIndex(null, '{{%yesterdays_news_visits}}', 'url', true);
+        $this->createIndex(null, '{{%yesterdays_news_visits}}', ['siteId', 'url'], true);
 
         // Non-unique index on lastVisitedAt for efficient range queries during pruning.
         $this->createIndex(null, '{{%yesterdays_news_visits}}', 'lastVisitedAt');

@@ -1,5 +1,9 @@
 # Release Notes for Yesterday's News
 
+## 1.0.1 - 2026-09-22
+
+- Fixed fresh installs not getting the `siteId` column on the visits table, which threw a database exception on every request. ([#5](https://github.com/honchoagency/craft-yesterdays-news/issues/5))
+
 ## 1.0.0 - 2026-08-28
 
 - Add multi-site awareness. Thanks [@wmdhosting](https://github.com/wmdhosting) for the PR ([#3](https://github.com/honchoagency/craft-yesterdays-news/pull/3))
